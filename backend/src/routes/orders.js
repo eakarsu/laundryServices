@@ -2,6 +2,7 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -18,6 +19,8 @@ const generateOrderNumber = () => {
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, customerId, startDate, endDate, page = 1, limit = 20, isRush } = req.query;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'desc';
     const skip = (page - 1) * limit;
 
     let where = {};
@@ -63,10 +66,18 @@ router.get('/', authenticateToken, async (req, res) => {
         },
         skip,
         take: parseInt(limit),
-        orderBy: { createdAt: 'desc' }
+        orderBy: { [sortBy]: sortOrder }
       }),
       prisma.order.count({ where })
     ]);
+
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(orders);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('orders.csv');
+      return res.send(csv);
+    }
 
     res.json({
       orders,
@@ -74,6 +85,34 @@ router.get('/', authenticateToken, async (req, res) => {
       page: parseInt(page),
       totalPages: Math.ceil(total / limit)
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete orders
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.order.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update orders
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.order.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

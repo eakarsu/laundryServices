@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { FiPlus, FiGift, FiCreditCard, FiSearch } from 'react-icons/fi';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FiPlus, FiGift, FiCreditCard, FiSearch, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { TableSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
+import SortableHeader from '../components/SortableHeader';
 
 function GiftCards() {
   const [giftCards, setGiftCards] = useState([]);
@@ -11,6 +16,9 @@ function GiftCards() {
   const [formData, setFormData] = useState({ amount: '' });
   const [checkCode, setCheckCode] = useState('');
   const [checkResult, setCheckResult] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [sortField, setSortField] = useState('createdAt');
+  const [sortDirection, setSortDirection] = useState('desc');
 
   useEffect(() => {
     fetchGiftCards();
@@ -26,6 +34,39 @@ function GiftCards() {
       setLoading(false);
     }
   };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedGiftCards = useMemo(() => {
+    const items = [...giftCards];
+    items.sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+      if (sortField === 'balance' || sortField === 'initialValue') {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+      }
+      if (sortField === 'customer') {
+        aVal = a.customer ? `${a.customer.firstName} ${a.customer.lastName}` : '';
+        bVal = b.customer ? `${b.customer.firstName} ${b.customer.lastName}` : '';
+      }
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toLowerCase();
+      }
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [giftCards, sortField, sortDirection]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -49,8 +90,56 @@ function GiftCards() {
     }
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Code', 'Balance', 'Initial Value', 'Customer', 'Expiry', 'Status', 'Created'];
+    const rows = giftCards.map(c => [
+      c.code, parseFloat(c.balance).toFixed(2), parseFloat(c.initialValue).toFixed(2),
+      c.customer ? `${c.customer.firstName} ${c.customer.lastName}` : '-',
+      c.expiryDate ? new Date(c.expiryDate).toLocaleDateString() : 'No expiry',
+      c.isActive ? 'Active' : 'Inactive',
+      new Date(c.createdAt).toLocaleDateString()
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'gift-cards.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Gift Cards Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+    doc.text(`Total Balance: $${giftCards.reduce((sum, g) => sum + parseFloat(g.balance), 0).toFixed(2)}`, 14, 34);
+
+    autoTable(doc, {
+      startY: 42,
+      head: [['Code', 'Balance', 'Initial Value', 'Customer', 'Expiry', 'Status', 'Created']],
+      body: giftCards.map(c => [
+        c.code, `$${parseFloat(c.balance).toFixed(2)}`, `$${parseFloat(c.initialValue).toFixed(2)}`,
+        c.customer ? `${c.customer.firstName} ${c.customer.lastName}` : '-',
+        c.expiryDate ? new Date(c.expiryDate).toLocaleDateString() : 'No expiry',
+        c.isActive ? 'Active' : 'Inactive',
+        new Date(c.createdAt).toLocaleDateString()
+      ]),
+      styles: { fontSize: 7 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('gift-cards.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><TableSkeleton rows={8} cols={7} /></div>;
   }
 
   return (
@@ -61,6 +150,12 @@ function GiftCards() {
           <p className="page-subtitle">Create and manage gift cards</p>
         </div>
         <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
           <button className="btn btn-outline" onClick={() => setShowCheckModal(true)}>
             <FiSearch /> Check Balance
           </button>
@@ -92,18 +187,18 @@ function GiftCards() {
           <table className="table">
             <thead>
               <tr>
-                <th>Code</th>
-                <th>Balance</th>
-                <th>Initial Value</th>
-                <th>Customer</th>
+                <SortableHeader label="Code" field="code" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+                <SortableHeader label="Balance" field="balance" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+                <SortableHeader label="Initial Value" field="initialValue" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+                <SortableHeader label="Customer" field="customer" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
                 <th>Expiry</th>
                 <th>Status</th>
-                <th>Created</th>
+                <SortableHeader label="Created" field="createdAt" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
               </tr>
             </thead>
             <tbody>
-              {giftCards.map(card => (
-                <tr key={card.id}>
+              {sortedGiftCards.map(card => (
+                <tr key={card.id} onClick={() => setDetailData(card)} style={{ cursor: 'pointer' }}>
                   <td>
                     <code style={{ background: '#f1f5f9', padding: '4px 8px', borderRadius: 4 }}>
                       {card.code}
@@ -239,6 +334,14 @@ function GiftCards() {
             </div>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={`Gift Card: ${detailData.code}`}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

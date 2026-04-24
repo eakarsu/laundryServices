@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiBox, FiMapPin } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiBox, FiMapPin, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { CardSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
 
 function Lockers() {
   const [lockers, setLockers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editLocker, setEditLocker] = useState(null);
+  const [detailData, setDetailData] = useState(null);
   const [formData, setFormData] = useState({
     name: '', location: '', address: '', totalUnits: ''
   });
@@ -61,8 +66,51 @@ function Lockers() {
     setShowModal(true);
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Name', 'Location', 'Address', 'Total Units', 'Available Units', 'Active'];
+    const rows = lockers.map(l => [
+      l.name, l.location, l.address,
+      l.totalUnits, l.availableUnits,
+      l.isActive ? 'Yes' : 'No'
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'lockers.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Locker Stations Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Name', 'Location', 'Address', 'Total Units', 'Available', 'Active']],
+      body: lockers.map(l => [
+        l.name, l.location, l.address,
+        l.totalUnits, l.availableUnits,
+        l.isActive ? 'Yes' : 'No'
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('lockers.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><CardSkeleton count={6} /></div>;
   }
 
   return (
@@ -72,9 +120,17 @@ function Lockers() {
           <h1 className="page-title">Locker Stations</h1>
           <p className="page-subtitle">Manage self-service pickup locker locations</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add Locker Station
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add Locker Station
+          </button>
+        </div>
       </div>
 
       <div className="stats-grid">
@@ -100,7 +156,7 @@ function Lockers() {
 
       <div className="grid-3">
         {lockers.map(locker => (
-          <div key={locker.id} className="card">
+          <div key={locker.id} className="card" onClick={() => setDetailData(locker)} style={{ cursor: 'pointer' }}>
             <div className="flex-between" style={{ marginBottom: 16 }}>
               <div className="flex gap-2" style={{ alignItems: 'center' }}>
                 <div style={{
@@ -146,9 +202,11 @@ function Lockers() {
               </div>
             </div>
 
-            <button className="btn btn-outline btn-sm" onClick={() => openModal(locker)}>
-              <FiEdit /> Edit
-            </button>
+            <div onClick={e => e.stopPropagation()}>
+              <button className="btn btn-outline btn-sm" onClick={() => openModal(locker)}>
+                <FiEdit /> Edit
+              </button>
+            </div>
           </div>
         ))}
 
@@ -223,6 +281,14 @@ function Lockers() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={detailData.name}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

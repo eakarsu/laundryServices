@@ -125,6 +125,12 @@ function Login() {
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
+
+        <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <a href="/forgot-password" style={{ color: '#2563eb', fontSize: 13, textDecoration: 'none' }}>
+            Forgot Password?
+          </a>
+        </div>
         </form>
 
         <div style={{ marginTop: 24 }}>

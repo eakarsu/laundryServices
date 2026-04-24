@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -9,6 +10,8 @@ const prisma = new PrismaClient();
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { active, page = 1, limit = 20 } = req.query;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'asc';
     const skip = (page - 1) * limit;
 
     const where = {};
@@ -22,10 +25,18 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (re
         where,
         skip,
         take: parseInt(limit),
-        orderBy: { createdAt: 'desc' }
+        orderBy: { [sortBy]: sortOrder }
       }),
       prisma.coupon.count({ where })
     ]);
+
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(coupons);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('coupons.csv');
+      return res.send(csv);
+    }
 
     res.json({
       coupons,
@@ -98,6 +109,34 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (r
     if (error.code === 'P2002') {
       return res.status(400).json({ error: 'Coupon code already exists' });
     }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete coupons
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.coupon.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update coupons
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.coupon.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

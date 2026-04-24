@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FiPlus, FiEdit, FiTrash2, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { TableSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
+import SortableHeader from '../components/SortableHeader';
 
 function Services() {
   const [services, setServices] = useState([]);
@@ -10,6 +15,9 @@ function Services() {
   const [activeTab, setActiveTab] = useState('services');
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [sortField, setSortField] = useState('name');
+  const [sortDirection, setSortDirection] = useState('asc');
   const [formData, setFormData] = useState({
     name: '', description: '', category: 'DRY_CLEANING', basePrice: '', estimatedDays: 2
   });
@@ -35,6 +43,35 @@ function Services() {
       setLoading(false);
     }
   };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedItems = useMemo(() => {
+    const items = activeTab === 'services' ? [...services] : [...garments];
+    items.sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+      if (sortField === 'basePrice') {
+        aVal = parseFloat(aVal);
+        bVal = parseFloat(bVal);
+      }
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toLowerCase();
+      }
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [services, garments, activeTab, sortField, sortDirection]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -97,8 +134,69 @@ function Services() {
     }
   };
 
+  const handleExportCSV = () => {
+    const items = activeTab === 'services' ? services : garments;
+    const headers = activeTab === 'services'
+      ? ['Name', 'Category', 'Base Price', 'Est. Days', 'Status']
+      : ['Name', 'Category', 'Base Price', 'Status'];
+    const rows = items.map(item => {
+      const row = [
+        item.name, item.category.replace('_', ' '),
+        parseFloat(item.basePrice).toFixed(2)
+      ];
+      if (activeTab === 'services') row.push(item.estimatedDays);
+      row.push(item.isActive ? 'Active' : 'Inactive');
+      return row;
+    });
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${activeTab}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const items = activeTab === 'services' ? services : garments;
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(`${activeTab === 'services' ? 'Services' : 'Garment Types'} Report`, 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    const head = activeTab === 'services'
+      ? [['Name', 'Category', 'Base Price', 'Est. Days', 'Status']]
+      : [['Name', 'Category', 'Base Price', 'Status']];
+
+    const body = items.map(item => {
+      const row = [
+        item.name, item.category.replace('_', ' '),
+        `$${parseFloat(item.basePrice).toFixed(2)}`
+      ];
+      if (activeTab === 'services') row.push(`${item.estimatedDays} days`);
+      row.push(item.isActive ? 'Active' : 'Inactive');
+      return row;
+    });
+
+    autoTable(doc, {
+      startY: 35,
+      head,
+      body,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save(`${activeTab}.pdf`);
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><TableSkeleton rows={8} cols={6} /></div>;
   }
 
   return (
@@ -108,9 +206,17 @@ function Services() {
           <h1 className="page-title">Services & Garments</h1>
           <p className="page-subtitle">Manage service offerings and garment types</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add {activeTab === 'services' ? 'Service' : 'Garment Type'}
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add {activeTab === 'services' ? 'Service' : 'Garment Type'}
+          </button>
+        </div>
       </div>
 
       <div className="card">
@@ -127,17 +233,43 @@ function Services() {
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Base Price</th>
-                {activeTab === 'services' && <th>Est. Days</th>}
+                <SortableHeader
+                  label="Name"
+                  field="name"
+                  currentSort={sortField}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Category"
+                  field="category"
+                  currentSort={sortField}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Base Price"
+                  field="basePrice"
+                  currentSort={sortField}
+                  direction={sortDirection}
+                  onSort={handleSort}
+                />
+                {activeTab === 'services' && (
+                  <SortableHeader
+                    label="Est. Days"
+                    field="estimatedDays"
+                    currentSort={sortField}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                  />
+                )}
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {(activeTab === 'services' ? services : garments).map(item => (
-                <tr key={item.id}>
+              {sortedItems.map(item => (
+                <tr key={item.id} onClick={() => setDetailData(item)} style={{ cursor: 'pointer' }}>
                   <td style={{ fontWeight: 500 }}>{item.name}</td>
                   <td>
                     <span className="badge badge-secondary">{item.category.replace('_', ' ')}</span>
@@ -149,7 +281,7 @@ function Services() {
                       {item.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     <div className="flex gap-1">
                       <button className="btn btn-outline btn-sm" onClick={() => openModal(item)}>
                         <FiEdit />
@@ -247,6 +379,14 @@ function Services() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={detailData.name}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -10,6 +11,8 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, severity, type, customerId, page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'desc';
 
     const where = {};
     if (status) where.status = status;
@@ -28,12 +31,20 @@ router.get('/', authenticateToken, async (req, res) => {
             select: { firstName: true, lastName: true, email: true, phone: true }
           }
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { [sortBy]: sortOrder },
         skip,
         take: parseInt(limit)
       }),
       prisma.qualityIssue.count({ where })
     ]);
+
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(issues);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('quality-issues.csv');
+      return res.send(csv);
+    }
 
     res.json({
       data: issues,
@@ -86,6 +97,34 @@ router.get('/stats', authenticateToken, async (req, res) => {
         resolvedThisWeek: recentResolved
       }
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete quality issues
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.qualityIssue.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update quality issues
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.qualityIssue.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

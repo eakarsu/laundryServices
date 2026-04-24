@@ -1,7 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiCreditCard } from 'react-icons/fi';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FiPlus, FiEdit, FiCreditCard, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { TableSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
+import SortableHeader from '../components/SortableHeader';
 
 function Subscriptions() {
   const [plans, setPlans] = useState([]);
@@ -10,6 +15,9 @@ function Subscriptions() {
   const [activeTab, setActiveTab] = useState('plans');
   const [showModal, setShowModal] = useState(false);
   const [editPlan, setEditPlan] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [sortField, setSortField] = useState('startDate');
+  const [sortDirection, setSortDirection] = useState('desc');
   const [formData, setFormData] = useState({
     name: '', description: '', price: '', billingCycle: 'MONTHLY',
     itemLimit: '', discountPercent: 0, freePickups: 0, freeDeliveries: 0
@@ -35,6 +43,36 @@ function Subscriptions() {
       setLoading(false);
     }
   };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedSubscriptions = useMemo(() => {
+    const items = [...subscriptions];
+    items.sort((a, b) => {
+      let aVal, bVal;
+      if (sortField === 'customer') {
+        aVal = `${a.customer?.firstName || ''} ${a.customer?.lastName || ''}`.toLowerCase();
+        bVal = `${b.customer?.firstName || ''} ${b.customer?.lastName || ''}`.toLowerCase();
+      } else if (sortField === 'plan') {
+        aVal = (a.plan?.name || '').toLowerCase();
+        bVal = (b.plan?.name || '').toLowerCase();
+      } else {
+        aVal = a[sortField];
+        bVal = b[sortField];
+      }
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [subscriptions, sortField, sortDirection]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -77,8 +115,84 @@ function Subscriptions() {
     setShowModal(true);
   };
 
+  const handleExportCSV = () => {
+    if (activeTab === 'plans') {
+      const headers = ['Name', 'Price', 'Billing Cycle', 'Discount %', 'Free Pickups', 'Free Deliveries'];
+      const rows = plans.map(p => [
+        p.name, parseFloat(p.price).toFixed(2), p.billingCycle,
+        p.discountPercent, p.freePickups, p.freeDeliveries
+      ]);
+      const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'subscription-plans.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } else {
+      const headers = ['Customer', 'Plan', 'Status', 'Start Date', 'Renewal Date'];
+      const rows = subscriptions.map(s => [
+        `${s.customer?.firstName || ''} ${s.customer?.lastName || ''}`,
+        s.plan?.name || '', s.status,
+        new Date(s.startDate).toLocaleDateString(),
+        new Date(s.renewalDate).toLocaleDateString()
+      ]);
+      const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'active-subscriptions.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    }
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(activeTab === 'plans' ? 'Subscription Plans Report' : 'Active Subscriptions Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    if (activeTab === 'plans') {
+      autoTable(doc, {
+        startY: 35,
+        head: [['Name', 'Price', 'Billing Cycle', 'Discount %', 'Free Pickups', 'Free Deliveries']],
+        body: plans.map(p => [
+          p.name, `$${parseFloat(p.price).toFixed(2)}`, p.billingCycle,
+          `${p.discountPercent}%`, p.freePickups, p.freeDeliveries
+        ]),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [37, 99, 235] }
+      });
+    } else {
+      autoTable(doc, {
+        startY: 35,
+        head: [['Customer', 'Plan', 'Status', 'Start Date', 'Renewal Date']],
+        body: subscriptions.map(s => [
+          `${s.customer?.firstName || ''} ${s.customer?.lastName || ''}`,
+          s.plan?.name || '', s.status,
+          new Date(s.startDate).toLocaleDateString(),
+          new Date(s.renewalDate).toLocaleDateString()
+        ]),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [37, 99, 235] }
+      });
+    }
+
+    doc.save(activeTab === 'plans' ? 'subscription-plans.pdf' : 'active-subscriptions.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><TableSkeleton rows={8} cols={5} /></div>;
   }
 
   return (
@@ -88,9 +202,17 @@ function Subscriptions() {
           <h1 className="page-title">Subscriptions</h1>
           <p className="page-subtitle">Manage subscription plans and active subscriptions</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add Plan
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add Plan
+          </button>
+        </div>
       </div>
 
       <div className="tabs" style={{ marginBottom: 24 }}>
@@ -105,7 +227,7 @@ function Subscriptions() {
       {activeTab === 'plans' && (
         <div className="grid-4">
           {plans.map(plan => (
-            <div key={plan.id} className="card" style={{ textAlign: 'center' }}>
+            <div key={plan.id} className="card" style={{ textAlign: 'center', cursor: 'pointer' }} onClick={() => setDetailData(plan)}>
               <h4 style={{ marginBottom: 8 }}>{plan.name}</h4>
               <div style={{ fontSize: 32, fontWeight: 700, color: '#2563eb', marginBottom: 8 }}>
                 ${parseFloat(plan.price).toFixed(2)}
@@ -138,9 +260,11 @@ function Subscriptions() {
                 </div>
               </div>
 
-              <button className="btn btn-outline" onClick={() => openModal(plan)}>
-                <FiEdit /> Edit
-              </button>
+              <div onClick={e => e.stopPropagation()}>
+                <button className="btn btn-outline" onClick={() => openModal(plan)}>
+                  <FiEdit /> Edit
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -152,16 +276,46 @@ function Subscriptions() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Customer</th>
-                  <th>Plan</th>
-                  <th>Status</th>
-                  <th>Start Date</th>
-                  <th>Renewal Date</th>
+                  <SortableHeader
+                    label="Customer"
+                    field="customer"
+                    currentSort={sortField}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Plan"
+                    field="plan"
+                    currentSort={sortField}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Status"
+                    field="status"
+                    currentSort={sortField}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Start Date"
+                    field="startDate"
+                    currentSort={sortField}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Renewal Date"
+                    field="renewalDate"
+                    currentSort={sortField}
+                    direction={sortDirection}
+                    onSort={handleSort}
+                  />
                 </tr>
               </thead>
               <tbody>
-                {subscriptions.map(sub => (
-                  <tr key={sub.id}>
+                {sortedSubscriptions.map(sub => (
+                  <tr key={sub.id} onClick={() => setDetailData(sub)} style={{ cursor: 'pointer' }}>
                     <td>{sub.customer?.firstName} {sub.customer?.lastName}</td>
                     <td>{sub.plan?.name}</td>
                     <td>
@@ -292,6 +446,14 @@ function Subscriptions() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={detailData.name || `${detailData.customer?.firstName || ''} ${detailData.customer?.lastName || ''}`}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

@@ -1,13 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiPercent, FiDollarSign } from 'react-icons/fi';
+import React, { useState, useEffect, useMemo } from 'react';
+import { FiPlus, FiEdit, FiPercent, FiDollarSign, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { TableSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
+import SortableHeader from '../components/SortableHeader';
+import BulkActionBar from '../components/BulkActionBar';
 
 function Coupons() {
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editCoupon, setEditCoupon] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [sortField, setSortField] = useState('code');
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [selectedIds, setSelectedIds] = useState([]);
   const [formData, setFormData] = useState({
     code: '', description: '', discountType: 'PERCENTAGE', discountValue: '',
     minOrderAmount: '', maxDiscount: '', usageLimit: '',
@@ -27,6 +37,63 @@ function Coupons() {
       toast.error('Error loading coupons');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedCoupons = useMemo(() => {
+    const items = [...coupons];
+    items.sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+      if (sortField === 'discountValue' || sortField === 'minOrderAmount') {
+        aVal = parseFloat(aVal) || 0;
+        bVal = parseFloat(bVal) || 0;
+      }
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toLowerCase();
+      }
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [coupons, sortField, sortDirection]);
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === coupons.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(coupons.map(c => c.id));
+    }
+  };
+
+  const handleSelectOne = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDeactivate = async () => {
+    if (!confirm(`Deactivate ${selectedIds.length} coupon(s)?`)) return;
+    try {
+      await Promise.all(selectedIds.map(id =>
+        api.patch(`/coupons/${id}`, { isActive: false })
+      ));
+      toast.success(`${selectedIds.length} coupon(s) deactivated`);
+      setSelectedIds([]);
+      fetchCoupons();
+    } catch (error) {
+      toast.error('Error deactivating coupons');
     }
   };
 
@@ -79,8 +146,56 @@ function Coupons() {
   const isExpired = (endDate) => new Date(endDate) < new Date();
   const isActive = (coupon) => coupon.isActive && !isExpired(coupon.endDate);
 
+  const handleExportCSV = () => {
+    const headers = ['Code', 'Description', 'Discount Type', 'Discount Value', 'Min Order', 'Usage', 'Start Date', 'End Date', 'Status'];
+    const rows = coupons.map(c => [
+      c.code, c.description || '', c.discountType, c.discountValue,
+      c.minOrderAmount || '', `${c.usageCount}${c.usageLimit ? '/' + c.usageLimit : ''}`,
+      new Date(c.startDate).toLocaleDateString(),
+      new Date(c.endDate).toLocaleDateString(),
+      isActive(c) ? 'Active' : isExpired(c.endDate) ? 'Expired' : 'Inactive'
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'coupons.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Coupons Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Code', 'Description', 'Discount', 'Min Order', 'Usage', 'Valid Period', 'Status']],
+      body: coupons.map(c => [
+        c.code, c.description || '-',
+        `${c.discountValue}${c.discountType === 'PERCENTAGE' ? '%' : '$'}`,
+        c.minOrderAmount ? `$${c.minOrderAmount}` : '-',
+        `${c.usageCount}${c.usageLimit ? '/' + c.usageLimit : ''}`,
+        `${new Date(c.startDate).toLocaleDateString()} - ${new Date(c.endDate).toLocaleDateString()}`,
+        isActive(c) ? 'Active' : isExpired(c.endDate) ? 'Expired' : 'Inactive'
+      ]),
+      styles: { fontSize: 7 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('coupons.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><TableSkeleton rows={8} cols={8} /></div>;
   }
 
   return (
@@ -90,29 +205,59 @@ function Coupons() {
           <h1 className="page-title">Coupons & Promotions</h1>
           <p className="page-subtitle">Create and manage discount codes</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add Coupon
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add Coupon
+          </button>
+        </div>
       </div>
+
+      <BulkActionBar
+        selectedCount={selectedIds.length}
+        onBulkDelete={handleBulkDeactivate}
+        onBulkUpdate={() => {}}
+        onClearSelection={() => setSelectedIds([])}
+        updateOptions={[]}
+      />
 
       <div className="card">
         <div className="table-container">
           <table className="table">
             <thead>
               <tr>
-                <th>Code</th>
+                <th style={{ width: 40 }}>
+                  <input
+                    type="checkbox"
+                    checked={coupons.length > 0 && selectedIds.length === coupons.length}
+                    onChange={handleSelectAll}
+                  />
+                </th>
+                <SortableHeader label="Code" field="code" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
                 <th>Description</th>
-                <th>Discount</th>
+                <SortableHeader label="Discount" field="discountValue" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
                 <th>Min Order</th>
                 <th>Usage</th>
-                <th>Valid Period</th>
+                <SortableHeader label="Start Date" field="startDate" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {coupons.map(coupon => (
-                <tr key={coupon.id}>
+              {sortedCoupons.map(coupon => (
+                <tr key={coupon.id} onClick={() => setDetailData(coupon)} style={{ cursor: 'pointer' }}>
+                  <td onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(coupon.id)}
+                      onChange={() => handleSelectOne(coupon.id)}
+                    />
+                  </td>
                   <td>
                     <code style={{ background: '#f1f5f9', padding: '4px 8px', borderRadius: 4 }}>
                       {coupon.code}
@@ -139,7 +284,7 @@ function Coupons() {
                       {isActive(coupon) ? 'Active' : isExpired(coupon.endDate) ? 'Expired' : 'Inactive'}
                     </span>
                   </td>
-                  <td>
+                  <td onClick={e => e.stopPropagation()}>
                     <button className="btn btn-outline btn-sm" onClick={() => openModal(coupon)}>
                       <FiEdit />
                     </button>
@@ -148,7 +293,7 @@ function Coupons() {
               ))}
               {coupons.length === 0 && (
                 <tr>
-                  <td colSpan="8" className="text-center" style={{ padding: 40, color: '#64748b' }}>
+                  <td colSpan="9" className="text-center" style={{ padding: 40, color: '#64748b' }}>
                     No coupons found
                   </td>
                 </tr>
@@ -282,6 +427,14 @@ function Coupons() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={`Coupon: ${detailData.code}`}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

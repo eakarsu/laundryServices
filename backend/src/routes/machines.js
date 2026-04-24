@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -9,6 +10,8 @@ const prisma = new PrismaClient();
 router.get('/', async (req, res) => {
   try {
     const { locationId, type, status } = req.query;
+    const sortBy = req.query.sortBy || 'machineNumber';
+    const sortOrder = req.query.sortOrder || 'asc';
 
     const where = {};
     if (locationId) where.locationId = locationId;
@@ -23,10 +26,46 @@ router.get('/', async (req, res) => {
           select: { usages: true, maintenances: true }
         }
       },
-      orderBy: { machineNumber: 'asc' }
+      orderBy: { [sortBy]: sortOrder }
     });
 
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(machines);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('machines.csv');
+      return res.send(csv);
+    }
+
     res.json(machines);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete machines
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.machine.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update machines
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.machine.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

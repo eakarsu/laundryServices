@@ -1,0 +1,82 @@
+Here's how to test the new features through the frontend:
+
+  Testing New Features
+
+  1. Login Page Auto-Fill Buttons
+
+  - Go to http://localhost:5173/login
+  - Click any quick login button (Admin, Manager, Driver, Customer)
+  - Email/password will auto-populate, then click "Sign In"
+
+  2. Quality Issues (Login as Admin or Manager)
+
+  - Navigate to Quality Issues in sidebar
+  - Click "Report Issue" button to create a new quality issue
+  - Fill in order, severity, type, description
+  - View existing issues in the table
+  - Click "View" on any issue to see details
+  - Click "Resolve" to close an issue with compensation
+
+  3. Order Tracking (Real-time WebSocket)
+
+  - Navigate to Order Tracking in sidebar
+  - Enter an order number (e.g., ORD-2024-0001)
+  - See the timeline and driver location updates
+  - Or go to Orders → click any order → view tracking tab
+
+  4. Driver Dashboard (Login as Driver: driver1@laundry.com)
+
+  - After login, click "My Route" in sidebar
+  - See today's assigned stops (pickups/deliveries)
+  - Click "Start Route" to begin
+  - Click "Complete Pickup" or "Complete Delivery" on each stop
+  - GPS location updates automatically
+
+  5. Route Optimization (Login as Admin/Manager)
+
+  - Navigate to Routes in sidebar
+  - Click "Create Route" button
+  - Select a driver and assign pickups/deliveries
+  - After creating, click "Optimize" button on the route card
+  - The stops will be reordered for shortest distance
+
+  6. All "Add New" Buttons
+
+  Test these on each page:
+  ┌────────────────┬──────────────────────┐
+  │      Page      │        Button        │
+  ├────────────────┼──────────────────────┤
+  │ Customers      │ "Add Customer"       │
+  ├────────────────┼──────────────────────┤
+  │ Drivers        │ "Add Driver"         │
+  ├────────────────┼──────────────────────┤
+  │ Services       │ "Add Service"        │
+  ├────────────────┼──────────────────────┤
+  │ Subscriptions  │ "Add Plan"           │
+  ├────────────────┼──────────────────────┤
+  │ Coupons        │ "Add Coupon"         │
+  ├────────────────┼──────────────────────┤
+  │ Gift Cards     │ "Create Gift Card"   │
+  ├────────────────┼──────────────────────┤
+  │ Machines       │ "Add Machine"        │
+  ├────────────────┼──────────────────────┤
+  │ Locations      │ "Add Location"       │
+  ├────────────────┼──────────────────────┤
+  │ Lockers        │ "Add Locker Station" │
+  ├────────────────┼──────────────────────┤
+  │ Staff          │ "Add Staff"          │
+  ├────────────────┼──────────────────────┤
+  │ Routes         │ "Create Route"       │
+  ├────────────────┼──────────────────────┤
+  │ Quality Issues │ "Report Issue"       │
+  └────────────────┴──────────────────────┘
+  7. Row/Card Click Navigation
+
+  - On Orders page → click order number → goes to order detail
+  - On Customers page → click customer name → goes to customer detail
+  - On Dashboard → click any quick action card → navigates to that section
+
+  8. AI Features (needs OpenRouter API key)
+
+  - Navigate to AI Tools in sidebar
+  - Test demand forecasting, stain analysis, pricing suggestions

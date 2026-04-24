@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiPlay, FiSquare, FiTool, FiActivity } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiPlay, FiSquare, FiTool, FiActivity, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { CardSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
 
 function Machines() {
   const [machines, setMachines] = useState([]);
@@ -10,6 +14,7 @@ function Machines() {
   const [showModal, setShowModal] = useState(false);
   const [showStartModal, setShowStartModal] = useState(false);
   const [selectedMachine, setSelectedMachine] = useState(null);
+  const [detailData, setDetailData] = useState(null);
   const [formData, setFormData] = useState({
     machineNumber: '', type: 'WASHER', brand: '', model: '',
     capacity: '', pricePerCycle: '', locationId: '', isRemoteEnabled: true
@@ -123,8 +128,50 @@ function Machines() {
     return colors[status] || '#64748b';
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Machine #', 'Type', 'Brand', 'Model', 'Location', 'Price/Cycle', 'Status', 'Capacity'];
+    const rows = machines.map(m => [
+      m.machineNumber, m.type, m.brand || '', m.model || '',
+      m.location?.name || '', parseFloat(m.pricePerCycle).toFixed(2),
+      m.status, m.capacity || ''
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'machines.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Machines Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Machine #', 'Type', 'Brand', 'Model', 'Location', 'Price/Cycle', 'Status']],
+      body: machines.map(m => [
+        m.machineNumber, m.type, m.brand || '-', m.model || '-',
+        m.location?.name || '-', `$${parseFloat(m.pricePerCycle).toFixed(2)}`, m.status
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('machines.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><CardSkeleton count={8} /></div>;
   }
 
   return (
@@ -134,9 +181,17 @@ function Machines() {
           <h1 className="page-title">Machine Management</h1>
           <p className="page-subtitle">Monitor and control laundromat machines</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add Machine
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add Machine
+          </button>
+        </div>
       </div>
 
       <div className="stats-grid">
@@ -160,7 +215,7 @@ function Machines() {
 
       <div className="grid-4">
         {machines.map(machine => (
-          <div key={machine.id} className="card" style={{ padding: 16 }}>
+          <div key={machine.id} className="card" style={{ padding: 16, cursor: 'pointer' }} onClick={() => setDetailData(machine)}>
             <div className="flex-between" style={{ marginBottom: 12 }}>
               <div>
                 <h4 style={{ marginBottom: 4 }}>{machine.machineNumber}</h4>
@@ -189,7 +244,7 @@ function Machines() {
               )}
             </div>
 
-            <div className="flex gap-1">
+            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
               {machine.status === 'AVAILABLE' && (
                 <button
                   className="btn btn-success btn-sm"
@@ -359,6 +414,14 @@ function Machines() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={`Machine ${detailData.machineNumber}`}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

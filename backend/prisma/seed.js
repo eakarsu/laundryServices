@@ -1,10 +1,21 @@
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('🚀 Seeding database with comprehensive data...\n');
+
+  // Clean existing data using TRUNCATE CASCADE
+  console.log('🧹 Cleaning existing data...');
+  const tableNames = await prisma.$queryRaw`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != '_prisma_migrations'
+  `;
+  for (const { tablename } of tableNames) {
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" CASCADE`);
+  }
+  console.log('   ✅ Cleaned existing data\n');
 
   // Create Locations (16)
   console.log('📍 Creating locations...');
@@ -195,26 +206,26 @@ async function main() {
   // Create Customers (20)
   console.log('👤 Creating customers...');
   const customers = await Promise.all([
-    prisma.customer.create({ data: { email: 'john.smith@email.com', passwordHash: hashedPassword, firstName: 'John', lastName: 'Smith', phone: '212-555-2001', creditBalance: 25.00, loyaltyPoints: 150 } }),
-    prisma.customer.create({ data: { email: 'jane.doe@email.com', passwordHash: hashedPassword, firstName: 'Jane', lastName: 'Doe', phone: '212-555-2002', creditBalance: 50.00, loyaltyPoints: 320 } }),
-    prisma.customer.create({ data: { email: 'robert.johnson@email.com', passwordHash: hashedPassword, firstName: 'Robert', lastName: 'Johnson', phone: '212-555-2003', creditBalance: 0, loyaltyPoints: 85 } }),
-    prisma.customer.create({ data: { email: 'maria.garcia@email.com', passwordHash: hashedPassword, firstName: 'Maria', lastName: 'Garcia', phone: '212-555-2004', creditBalance: 15.50, loyaltyPoints: 210 } }),
-    prisma.customer.create({ data: { email: 'david.williams@email.com', passwordHash: hashedPassword, firstName: 'David', lastName: 'Williams', phone: '212-555-2005', creditBalance: 100.00, loyaltyPoints: 500 } }),
-    prisma.customer.create({ data: { email: 'sarah.brown@email.com', passwordHash: hashedPassword, firstName: 'Sarah', lastName: 'Brown', phone: '212-555-2006', creditBalance: 0, loyaltyPoints: 45 } }),
-    prisma.customer.create({ data: { email: 'michael.jones@email.com', passwordHash: hashedPassword, firstName: 'Michael', lastName: 'Jones', phone: '212-555-2007', creditBalance: 30.00, loyaltyPoints: 275 } }),
-    prisma.customer.create({ data: { email: 'emily.davis@email.com', passwordHash: hashedPassword, firstName: 'Emily', lastName: 'Davis', phone: '212-555-2008', creditBalance: 75.00, loyaltyPoints: 400 } }),
-    prisma.customer.create({ data: { email: 'james.miller@email.com', passwordHash: hashedPassword, firstName: 'James', lastName: 'Miller', phone: '212-555-2009', creditBalance: 0, loyaltyPoints: 60 } }),
-    prisma.customer.create({ data: { email: 'lisa.wilson@email.com', passwordHash: hashedPassword, firstName: 'Lisa', lastName: 'Wilson', phone: '212-555-2010', creditBalance: 20.00, loyaltyPoints: 180 } }),
-    prisma.customer.create({ data: { email: 'william.moore@email.com', passwordHash: hashedPassword, firstName: 'William', lastName: 'Moore', phone: '212-555-2011', creditBalance: 45.00, loyaltyPoints: 290 } }),
-    prisma.customer.create({ data: { email: 'jennifer.taylor@email.com', passwordHash: hashedPassword, firstName: 'Jennifer', lastName: 'Taylor', phone: '212-555-2012', creditBalance: 10.00, loyaltyPoints: 125 } }),
-    prisma.customer.create({ data: { email: 'richard.anderson@email.com', passwordHash: hashedPassword, firstName: 'Richard', lastName: 'Anderson', phone: '212-555-2013', creditBalance: 0, loyaltyPoints: 30 } }),
-    prisma.customer.create({ data: { email: 'susan.thomas@email.com', passwordHash: hashedPassword, firstName: 'Susan', lastName: 'Thomas', phone: '212-555-2014', creditBalance: 60.00, loyaltyPoints: 350 } }),
-    prisma.customer.create({ data: { email: 'joseph.jackson@email.com', passwordHash: hashedPassword, firstName: 'Joseph', lastName: 'Jackson', phone: '212-555-2015', creditBalance: 5.00, loyaltyPoints: 95 } }),
-    prisma.customer.create({ data: { email: 'margaret.white@email.com', passwordHash: hashedPassword, firstName: 'Margaret', lastName: 'White', phone: '212-555-2016', creditBalance: 80.00, loyaltyPoints: 420 } }),
-    prisma.customer.create({ data: { email: 'charles.harris@email.com', passwordHash: hashedPassword, firstName: 'Charles', lastName: 'Harris', phone: '212-555-2017', creditBalance: 0, loyaltyPoints: 55 } }),
-    prisma.customer.create({ data: { email: 'patricia.martin@email.com', passwordHash: hashedPassword, firstName: 'Patricia', lastName: 'Martin', phone: '212-555-2018', creditBalance: 35.00, loyaltyPoints: 245 } }),
-    prisma.customer.create({ data: { email: 'thomas.thompson@email.com', passwordHash: hashedPassword, firstName: 'Thomas', lastName: 'Thompson', phone: '212-555-2019', creditBalance: 90.00, loyaltyPoints: 480 } }),
-    prisma.customer.create({ data: { email: 'elizabeth.garcia@email.com', passwordHash: hashedPassword, firstName: 'Elizabeth', lastName: 'Garcia', phone: '212-555-2020', creditBalance: 12.50, loyaltyPoints: 165 } }),
+    prisma.customer.create({ data: { email: 'john.smith@email.com', passwordHash: hashedPassword, firstName: 'John', lastName: 'Smith', phone: '212-555-2001', creditBalance: 25.00, loyaltyPoints: 150, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'jane.doe@email.com', passwordHash: hashedPassword, firstName: 'Jane', lastName: 'Doe', phone: '212-555-2002', creditBalance: 50.00, loyaltyPoints: 320, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'robert.johnson@email.com', passwordHash: hashedPassword, firstName: 'Robert', lastName: 'Johnson', phone: '212-555-2003', creditBalance: 0, loyaltyPoints: 85, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'maria.garcia@email.com', passwordHash: hashedPassword, firstName: 'Maria', lastName: 'Garcia', phone: '212-555-2004', creditBalance: 15.50, loyaltyPoints: 210, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'david.williams@email.com', passwordHash: hashedPassword, firstName: 'David', lastName: 'Williams', phone: '212-555-2005', creditBalance: 100.00, loyaltyPoints: 500, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'sarah.brown@email.com', passwordHash: hashedPassword, firstName: 'Sarah', lastName: 'Brown', phone: '212-555-2006', creditBalance: 0, loyaltyPoints: 45, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'michael.jones@email.com', passwordHash: hashedPassword, firstName: 'Michael', lastName: 'Jones', phone: '212-555-2007', creditBalance: 30.00, loyaltyPoints: 275, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'emily.davis@email.com', passwordHash: hashedPassword, firstName: 'Emily', lastName: 'Davis', phone: '212-555-2008', creditBalance: 75.00, loyaltyPoints: 400, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'james.miller@email.com', passwordHash: hashedPassword, firstName: 'James', lastName: 'Miller', phone: '212-555-2009', creditBalance: 0, loyaltyPoints: 60, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'lisa.wilson@email.com', passwordHash: hashedPassword, firstName: 'Lisa', lastName: 'Wilson', phone: '212-555-2010', creditBalance: 20.00, loyaltyPoints: 180, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'william.moore@email.com', passwordHash: hashedPassword, firstName: 'William', lastName: 'Moore', phone: '212-555-2011', creditBalance: 45.00, loyaltyPoints: 290, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'jennifer.taylor@email.com', passwordHash: hashedPassword, firstName: 'Jennifer', lastName: 'Taylor', phone: '212-555-2012', creditBalance: 10.00, loyaltyPoints: 125, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'richard.anderson@email.com', passwordHash: hashedPassword, firstName: 'Richard', lastName: 'Anderson', phone: '212-555-2013', creditBalance: 0, loyaltyPoints: 30, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'susan.thomas@email.com', passwordHash: hashedPassword, firstName: 'Susan', lastName: 'Thomas', phone: '212-555-2014', creditBalance: 60.00, loyaltyPoints: 350, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'joseph.jackson@email.com', passwordHash: hashedPassword, firstName: 'Joseph', lastName: 'Jackson', phone: '212-555-2015', creditBalance: 5.00, loyaltyPoints: 95, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'margaret.white@email.com', passwordHash: hashedPassword, firstName: 'Margaret', lastName: 'White', phone: '212-555-2016', creditBalance: 80.00, loyaltyPoints: 420, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'charles.harris@email.com', passwordHash: hashedPassword, firstName: 'Charles', lastName: 'Harris', phone: '212-555-2017', creditBalance: 0, loyaltyPoints: 55, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'patricia.martin@email.com', passwordHash: hashedPassword, firstName: 'Patricia', lastName: 'Martin', phone: '212-555-2018', creditBalance: 35.00, loyaltyPoints: 245, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
+    prisma.customer.create({ data: { email: 'thomas.thompson@email.com', passwordHash: hashedPassword, firstName: 'Thomas', lastName: 'Thompson', phone: '212-555-2019', creditBalance: 90.00, loyaltyPoints: 480, emailVerified: true } }),
+    prisma.customer.create({ data: { email: 'elizabeth.garcia@email.com', passwordHash: hashedPassword, firstName: 'Elizabeth', lastName: 'Garcia', phone: '212-555-2020', creditBalance: 12.50, loyaltyPoints: 165, emailVerified: false, verificationToken: crypto.randomBytes(32).toString('hex') } }),
   ]);
   console.log(`   ✅ Created ${customers.length} customers`);
 
@@ -717,6 +728,47 @@ async function main() {
   await Promise.all(orderTrackings);
   console.log(`   ✅ Created ${orderTrackings.length} order tracking records`);
 
+  // Seed Password Resets
+  console.log('🔑 Creating password resets...');
+  const customerEmails = [
+    'john.smith@email.com',
+    'jane.doe@email.com',
+    'robert.johnson@email.com',
+    'maria.garcia@email.com',
+    'david.williams@email.com',
+    'sarah.brown@email.com',
+    'michael.jones@email.com',
+    'emily.davis@email.com',
+    'james.miller@email.com',
+    'lisa.wilson@email.com',
+    'william.moore@email.com',
+    'jennifer.taylor@email.com',
+    'richard.anderson@email.com',
+    'susan.thomas@email.com',
+    'joseph.jackson@email.com',
+  ];
+  const passwordResets = [];
+  for (let i = 0; i < 15; i++) {
+    const isUsed = i < 5;
+    const isExpired = i >= 5 && i < 10;
+    const expiresAt = isExpired
+      ? new Date(Date.now() - 24 * 60 * 60 * 1000)
+      : new Date(Date.now() + 60 * 60 * 1000);
+
+    passwordResets.push(
+      prisma.passwordReset.create({
+        data: {
+          email: customerEmails[i],
+          token: crypto.randomBytes(32).toString('hex'),
+          expiresAt,
+          used: isUsed
+        }
+      })
+    );
+  }
+  await Promise.all(passwordResets);
+  console.log(`   ✅ Created ${passwordResets.length} password resets`);
+
   // Summary
   console.log('\n========================================');
   console.log('✅ Database seeding completed successfully!');
@@ -740,6 +792,7 @@ async function main() {
   console.log(`   • ${qualityIssues.length} quality issues`);
   console.log(`   • ${subscriptions.length} subscriptions`);
   console.log(`   • ${notifications.length} notifications`);
+  console.log(`   • ${passwordResets.length} password resets`);
   console.log('\n🔑 Test credentials (all use password123):');
   console.log('   • Admin: admin@laundry.com');
   console.log('   • Manager: manager@laundry.com');

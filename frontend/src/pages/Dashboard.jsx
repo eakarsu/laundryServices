@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FiShoppingBag, FiTruck, FiDollarSign, FiUsers, FiPlus, FiArrowRight } from 'react-icons/fi';
+import { FiShoppingBag, FiTruck, FiDollarSign, FiUsers, FiPlus, FiArrowRight, FiMail } from 'react-icons/fi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { toast } from 'react-toastify';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
 function Dashboard() {
   const navigate = useNavigate();
+  const { user, isCustomer } = useAuth();
   const [stats, setStats] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
   const [revenueData, setRevenueData] = useState([]);
@@ -61,6 +64,34 @@ function Dashboard() {
           <FiPlus /> New Order
         </Link>
       </div>
+
+      {isCustomer() && user && !user.emailVerified && (
+        <div style={{
+          background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8,
+          padding: '12px 20px', marginBottom: 16, display: 'flex',
+          alignItems: 'center', justifyContent: 'space-between'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FiMail style={{ color: '#d97706' }} />
+            <span style={{ color: '#92400e', fontSize: 14 }}>
+              Please verify your email address to access all features.
+            </span>
+          </div>
+          <button
+            className="btn btn-sm btn-warning"
+            onClick={async () => {
+              try {
+                await api.post('/auth/resend-verification');
+                toast.success('Verification email sent!');
+              } catch {
+                toast.error('Failed to send verification email');
+              }
+            }}
+          >
+            Resend Verification
+          </button>
+        </div>
+      )}
 
       <div className="stats-grid">
         <div className="stat-card primary" onClick={() => navigate('/orders')} style={{ cursor: 'pointer' }}>

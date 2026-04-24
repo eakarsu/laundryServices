@@ -1,8 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiPlus, FiAlertTriangle, FiCheck, FiClock, FiFilter, FiX, FiEye } from 'react-icons/fi';
+import { FiPlus, FiAlertTriangle, FiCheck, FiClock, FiFilter, FiX, FiEye, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { TableSkeleton } from '../components/LoadingSkeleton';
+import SortableHeader from '../components/SortableHeader';
+import BulkActionBar from '../components/BulkActionBar';
 
 const issueTypes = [
   'DAMAGE', 'STAIN_NOT_REMOVED', 'WRONG_ITEM', 'MISSING_ITEM', 'SHRINKAGE',
@@ -23,6 +28,9 @@ function QualityIssues() {
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [orders, setOrders] = useState([]);
   const [filters, setFilters] = useState({ status: '', severity: '', type: '' });
+  const [sortField, setSortField] = useState('createdAt');
+  const [sortDirection, setSortDirection] = useState('desc');
+  const [selectedIds, setSelectedIds] = useState([]);
   const [formData, setFormData] = useState({
     orderId: '',
     issueType: 'OTHER',
@@ -61,6 +69,70 @@ function QualityIssues() {
       toast.error('Error loading data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedIssues = useMemo(() => {
+    if (!Array.isArray(issues)) return [];
+    const items = [...issues];
+    items.sort((a, b) => {
+      let aVal, bVal;
+      if (sortField === 'customer') {
+        aVal = a.customer ? `${a.customer.firstName} ${a.customer.lastName}` : '';
+        bVal = b.customer ? `${b.customer.firstName} ${b.customer.lastName}` : '';
+      } else if (sortField === 'order') {
+        aVal = a.order?.orderNumber || '';
+        bVal = b.order?.orderNumber || '';
+      } else {
+        aVal = a[sortField] || '';
+        bVal = b[sortField] || '';
+      }
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = bVal.toLowerCase();
+      }
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [issues, sortField, sortDirection]);
+
+  const handleSelectAll = () => {
+    if (!Array.isArray(issues)) return;
+    if (selectedIds.length === issues.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(issues.map(i => i.id));
+    }
+  };
+
+  const handleSelectOne = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkUpdateStatus = async (status) => {
+    if (!confirm(`Update ${selectedIds.length} issue(s) to ${status}?`)) return;
+    try {
+      await Promise.all(selectedIds.map(id =>
+        api.patch(`/quality-issues/${id}`, { status })
+      ));
+      toast.success(`${selectedIds.length} issue(s) updated to ${status}`);
+      setSelectedIds([]);
+      fetchData();
+    } catch (error) {
+      toast.error('Error updating issues');
     }
   };
 
@@ -138,8 +210,56 @@ function QualityIssues() {
     return colors[status] || 'badge-secondary';
   };
 
+  const handleExportCSV = () => {
+    const issuesList = Array.isArray(issues) ? issues : [];
+    const headers = ['Title', 'Order', 'Customer', 'Type', 'Severity', 'Status', 'Created'];
+    const rows = issuesList.map(i => [
+      i.title, i.order?.orderNumber || '-',
+      i.customer ? `${i.customer.firstName} ${i.customer.lastName}` : '-',
+      i.issueType?.replace('_', ' '), i.severity, i.status?.replace('_', ' '),
+      new Date(i.createdAt).toLocaleDateString()
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'quality-issues.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const issuesList = Array.isArray(issues) ? issues : [];
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Quality Issues Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+    doc.text(`Open Issues: ${stats?.summary?.openIssues || 0} | Critical: ${stats?.summary?.criticalIssues || 0}`, 14, 34);
+
+    autoTable(doc, {
+      startY: 42,
+      head: [['Title', 'Order', 'Customer', 'Type', 'Severity', 'Status', 'Created']],
+      body: issuesList.map(i => [
+        i.title, i.order?.orderNumber || '-',
+        i.customer ? `${i.customer.firstName} ${i.customer.lastName}` : '-',
+        i.issueType?.replace('_', ' '), i.severity, i.status?.replace('_', ' '),
+        new Date(i.createdAt).toLocaleDateString()
+      ]),
+      styles: { fontSize: 7 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('quality-issues.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><TableSkeleton rows={8} cols={8} /></div>;
   }
 
   return (
@@ -149,9 +269,17 @@ function QualityIssues() {
           <h1 className="page-title">Quality Issues</h1>
           <p className="page-subtitle">Track and resolve customer quality concerns</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <FiPlus /> Report Issue
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <FiPlus /> Report Issue
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -237,31 +365,57 @@ function QualityIssues() {
         </div>
       </div>
 
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.length}
+        onBulkDelete={() => handleBulkUpdateStatus('CLOSED')}
+        onBulkUpdate={(data) => handleBulkUpdateStatus(data.status)}
+        onClearSelection={() => setSelectedIds([])}
+        updateOptions={[
+          { label: 'Mark In Progress', data: { status: 'IN_PROGRESS' } },
+          { label: 'Mark Resolved', data: { status: 'RESOLVED' } }
+        ]}
+      />
+
       {/* Issues Table */}
       <div className="card">
         <table className="table">
           <thead>
             <tr>
-              <th>Issue</th>
-              <th>Order</th>
-              <th>Customer</th>
-              <th>Type</th>
-              <th>Severity</th>
-              <th>Status</th>
-              <th>Created</th>
+              <th style={{ width: 40 }}>
+                <input
+                  type="checkbox"
+                  checked={Array.isArray(issues) && issues.length > 0 && selectedIds.length === issues.length}
+                  onChange={handleSelectAll}
+                />
+              </th>
+              <SortableHeader label="Issue" field="title" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Order" field="order" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Customer" field="customer" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Type" field="issueType" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Severity" field="severity" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Status" field="status" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Created" field="createdAt" currentSort={sortField} direction={sortDirection} onSort={handleSort} />
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {!Array.isArray(issues) || issues.length === 0 ? (
+            {sortedIssues.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: 40 }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: 40 }}>
                   No quality issues found
                 </td>
               </tr>
             ) : (
-              issues.map(issue => (
+              sortedIssues.map(issue => (
                 <tr key={issue.id} onClick={() => viewIssue(issue)} style={{ cursor: 'pointer' }}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(issue.id)}
+                      onChange={() => handleSelectOne(issue.id)}
+                    />
+                  </td>
                   <td>
                     <div style={{ fontWeight: 500 }}>{issue.title}</div>
                     <div style={{ fontSize: 12, color: '#64748b' }}>

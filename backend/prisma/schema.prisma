@@ -16,6 +16,8 @@ model Customer {
   firstName         String
   lastName          String
   passwordHash      String
+  emailVerified     Boolean           @default(false)
+  verificationToken String?
   starchPreference  StarchLevel       @default(MEDIUM)
   hangerPreference  Boolean           @default(true)
   creasePreference  Boolean           @default(false)
@@ -586,6 +588,15 @@ enum StaffRole {
   CLERK
   PRESSER
   CLEANER
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 // ============ NOTIFICATIONS ============

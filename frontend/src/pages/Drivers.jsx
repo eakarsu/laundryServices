@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiTruck, FiPhone, FiMail, FiMapPin } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTruck, FiPhone, FiMail, FiMapPin, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { CardSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
 
 function Drivers() {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editDriver, setEditDriver] = useState(null);
+  const [detailData, setDetailData] = useState(null);
   const [formData, setFormData] = useState({
     email: '', phone: '', firstName: '', lastName: '',
     password: '', licenseNumber: '', vehicleInfo: ''
@@ -80,8 +85,67 @@ function Drivers() {
     }
   };
 
+  const handleExportCSV = async () => {
+    try {
+      const res = await api.get('/drivers?format=csv', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'drivers.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('CSV exported successfully');
+    } catch (error) {
+      // Fallback: build CSV from current data
+      const headers = ['Name', 'Email', 'Phone', 'License', 'Vehicle', 'Available', 'Pickups', 'Deliveries'];
+      const rows = drivers.map(d => [
+        `${d.firstName} ${d.lastName}`, d.email, d.phone,
+        d.licenseNumber || '', d.vehicleInfo || '',
+        d.isAvailable ? 'Yes' : 'No',
+        d._count?.pickups || 0, d._count?.deliveries || 0
+      ]);
+      const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'drivers.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('CSV exported successfully');
+    }
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Drivers Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Name', 'Email', 'Phone', 'License', 'Vehicle', 'Available', 'Pickups', 'Deliveries']],
+      body: drivers.map(d => [
+        `${d.firstName} ${d.lastName}`, d.email, d.phone,
+        d.licenseNumber || '-', d.vehicleInfo || '-',
+        d.isAvailable ? 'Yes' : 'No',
+        d._count?.pickups || 0, d._count?.deliveries || 0
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('drivers.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><CardSkeleton count={6} /></div>;
   }
 
   return (
@@ -91,14 +155,22 @@ function Drivers() {
           <h1 className="page-title">Drivers</h1>
           <p className="page-subtitle">Manage delivery drivers</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add Driver
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add Driver
+          </button>
+        </div>
       </div>
 
       <div className="grid-3">
         {drivers.map(driver => (
-          <div key={driver.id} className="card">
+          <div key={driver.id} className="card" onClick={() => setDetailData(driver)} style={{ cursor: 'pointer' }}>
             <div className="flex-between" style={{ marginBottom: 16 }}>
               <div className="flex gap-2" style={{ alignItems: 'center' }}>
                 <div style={{
@@ -142,7 +214,7 @@ function Drivers() {
               </div>
             </div>
 
-            <div className="flex gap-1">
+            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
               <button className="btn btn-outline btn-sm" onClick={() => openModal(driver)}>
                 <FiEdit /> Edit
               </button>
@@ -264,6 +336,14 @@ function Drivers() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={`${detailData.firstName} ${detailData.lastName}`}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );

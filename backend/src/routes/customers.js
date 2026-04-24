@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -9,6 +10,8 @@ const prisma = new PrismaClient();
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER', 'CLERK'), async (req, res) => {
   try {
     const { search, page = 1, limit = 20 } = req.query;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'desc';
     const skip = (page - 1) * limit;
 
     const where = search ? {
@@ -29,20 +32,58 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER', 'CLERK'), 
         },
         skip,
         take: parseInt(limit),
-        orderBy: { createdAt: 'desc' }
+        orderBy: { [sortBy]: sortOrder }
       }),
       prisma.customer.count({ where })
     ]);
 
+    const sanitizedCustomers = customers.map(c => {
+      const { passwordHash, ...customer } = c;
+      return customer;
+    });
+
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(sanitizedCustomers);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('customers.csv');
+      return res.send(csv);
+    }
+
     res.json({
-      customers: customers.map(c => {
-        const { passwordHash, ...customer } = c;
-        return customer;
-      }),
+      customers: sanitizedCustomers,
       total,
       page: parseInt(page),
       totalPages: Math.ceil(total / limit)
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete customers
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.customer.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update customers
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.customer.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

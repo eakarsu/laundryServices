@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import api from '../services/api';
 import { FiHome, FiUsers, FiShoppingBag, FiTruck, FiMapPin, FiSettings, FiBarChart2,
          FiCreditCard, FiGift, FiPercent, FiBox, FiCpu, FiMap, FiLogOut, FiUser,
          FiDollarSign, FiGrid, FiAlertTriangle, FiNavigation, FiActivity } from 'react-icons/fi';
@@ -11,7 +12,12 @@ function Layout() {
   const { connected } = useSocket();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch (e) {
+      // ignore - stateless JWT
+    }
     logout();
     navigate('/login');
   };

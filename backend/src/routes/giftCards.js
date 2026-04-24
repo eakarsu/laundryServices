@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -21,6 +22,8 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (re
   try {
     const { active, page = 1, limit = 20 } = req.query;
     const skip = (page - 1) * limit;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'desc';
 
     const where = {};
     if (active === 'true') where.isActive = true;
@@ -33,10 +36,18 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (re
         },
         skip,
         take: parseInt(limit),
-        orderBy: { createdAt: 'desc' }
+        orderBy: { [sortBy]: sortOrder }
       }),
       prisma.giftCard.count({ where })
     ]);
+
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(giftCards);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('gift-cards.csv');
+      return res.send(csv);
+    }
 
     res.json({
       giftCards,
@@ -93,6 +104,34 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER', 'CLERK'),
     });
 
     res.status(201).json(giftCard);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete gift cards
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.giftCard.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update gift cards
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.giftCard.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

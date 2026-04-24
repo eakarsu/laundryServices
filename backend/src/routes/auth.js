@@ -3,9 +3,21 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken } = require('../middleware/auth');
+const crypto = require('crypto');
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+// Password strength validation
+const validatePassword = (password) => {
+  const errors = [];
+  if (!password || password.length < 8) errors.push('Password must be at least 8 characters');
+  if (!/[A-Z]/.test(password)) errors.push('Password must contain an uppercase letter');
+  if (!/[a-z]/.test(password)) errors.push('Password must contain a lowercase letter');
+  if (!/[0-9]/.test(password)) errors.push('Password must contain a number');
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push('Password must contain a special character');
+  return errors;
+};
 
 // Customer Registration
 router.post('/register', async (req, res) => {
@@ -17,9 +29,15 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({ error: 'Password too weak', details: passwordErrors });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
+    const verificationToken = crypto.randomBytes(32).toString('hex');
     const customer = await prisma.customer.create({
-      data: { email, passwordHash, firstName, lastName, phone }
+      data: { email, passwordHash, firstName, lastName, phone, emailVerified: false, verificationToken }
     });
 
     const token = jwt.sign(
@@ -211,6 +229,11 @@ router.post('/change-password', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
+    const passwordErrors = validatePassword(newPassword);
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({ error: 'Password too weak', details: passwordErrors });
+    }
+
     const newPasswordHash = await bcrypt.hash(newPassword, 10);
 
     if (req.user.type === 'customer') {
@@ -231,6 +254,139 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     }
 
     res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Logout
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    res.json({ message: 'Logged out successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Forgot Password
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Check if customer exists
+    const customer = await prisma.customer.findUnique({ where: { email } });
+    if (!customer) {
+      // Don't reveal if email exists
+      return res.json({ message: 'If an account exists with this email, a reset link has been sent' });
+    }
+
+    // Generate reset token
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.passwordReset.create({
+      data: { email, token, expiresAt }
+    });
+
+    // In production, send email here
+    res.json({ message: 'If an account exists with this email, a reset link has been sent' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reset Password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: 'Token and new password are required' });
+    }
+
+    const passwordErrors = validatePassword(newPassword);
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({ error: 'Password too weak', details: passwordErrors });
+    }
+
+    const resetRecord = await prisma.passwordReset.findUnique({ where: { token } });
+
+    if (!resetRecord || resetRecord.used || resetRecord.expiresAt < new Date()) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.customer.update({
+      where: { email: resetRecord.email },
+      data: { passwordHash }
+    });
+
+    await prisma.passwordReset.update({
+      where: { id: resetRecord.id },
+      data: { used: true }
+    });
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Verify Email
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ error: 'Verification token is required' });
+    }
+
+    const customer = await prisma.customer.findFirst({
+      where: { verificationToken: token }
+    });
+
+    if (!customer) {
+      return res.status(400).json({ error: 'Invalid verification token' });
+    }
+
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: { emailVerified: true, verificationToken: null }
+    });
+
+    res.json({ message: 'Email verified successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Resend Verification Email
+router.post('/resend-verification', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.type !== 'customer') {
+      return res.status(400).json({ error: 'Only customers can verify email' });
+    }
+
+    const customer = await prisma.customer.findUnique({ where: { id: req.user.id } });
+
+    if (customer.emailVerified) {
+      return res.json({ message: 'Email already verified' });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    await prisma.customer.update({
+      where: { id: req.user.id },
+      data: { verificationToken }
+    });
+
+    // In production, send verification email here
+    res.json({ message: 'Verification email sent' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

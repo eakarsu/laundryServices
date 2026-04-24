@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { Parser } = require('json2csv');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -139,6 +140,34 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
   }
 });
 
+// Bulk delete subscriptions
+router.delete('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.subscription.deleteMany({ where: { id: { in: ids } } });
+    res.json({ message: `${result.count} items deleted`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk update subscriptions
+router.patch('/bulk', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
+  try {
+    const { ids, data } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+    const result = await prisma.subscription.updateMany({ where: { id: { in: ids } }, data });
+    res.json({ message: `${result.count} items updated`, count: result.count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Cancel subscription
 router.post('/:id/cancel', authenticateToken, async (req, res) => {
   try {
@@ -240,6 +269,8 @@ router.post('/:id/resume', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (req, res) => {
   try {
     const { status, planId, page = 1, limit = 20 } = req.query;
+    const sortBy = req.query.sortBy || 'createdAt';
+    const sortOrder = req.query.sortOrder || 'asc';
     const skip = (page - 1) * limit;
 
     const where = {};
@@ -255,10 +286,18 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'), async (re
         },
         skip,
         take: parseInt(limit),
-        orderBy: { createdAt: 'desc' }
+        orderBy: { [sortBy]: sortOrder }
       }),
       prisma.subscription.count({ where })
     ]);
+
+    if (req.query.format === 'csv') {
+      const parser = new Parser();
+      const csv = parser.parse(subscriptions);
+      res.header('Content-Type', 'text/csv');
+      res.attachment('subscriptions.csv');
+      return res.send(csv);
+    }
 
     res.json({
       subscriptions,

@@ -27,6 +27,9 @@ import POS from './pages/POS';
 import QualityIssues from './pages/QualityIssues';
 import OrderTracking from './pages/OrderTracking';
 import DriverDashboard from './pages/DriverDashboard';
+import ErrorBoundary from './components/ErrorBoundary';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -45,9 +48,12 @@ function PrivateRoute({ children }) {
 function App() {
   return (
     <SocketProvider>
+      <ErrorBoundary>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/track/:orderNumber" element={<OrderTracking />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/" element={
           <PrivateRoute>
             <Layout />
@@ -79,6 +85,7 @@ function App() {
           <Route path="tracking" element={<OrderTracking />} />
         </Route>
       </Routes>
+      </ErrorBoundary>
     </SocketProvider>
   );
 }

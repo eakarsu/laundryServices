@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { FiPlus, FiEdit, FiMapPin, FiClock, FiPhone } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiMapPin, FiClock, FiPhone, FiDownload, FiFileText } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api from '../services/api';
+import { CardSkeleton } from '../components/LoadingSkeleton';
+import RowDetailModal from '../components/RowDetailModal';
 
 function Locations() {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editLocation, setEditLocation] = useState(null);
+  const [detailData, setDetailData] = useState(null);
   const [formData, setFormData] = useState({
     name: '', address: '', city: '', state: '', zipCode: '',
     phone: '', openTime: '07:00', closeTime: '19:00'
@@ -69,8 +74,52 @@ function Locations() {
     setShowModal(true);
   };
 
+  const handleExportCSV = () => {
+    const headers = ['Name', 'Address', 'City', 'State', 'ZIP', 'Phone', 'Hours', 'Active', 'Machines', 'Staff'];
+    const rows = locations.map(l => [
+      l.name, l.address, l.city, l.state, l.zipCode,
+      l.phone || '', `${l.openTime || ''}-${l.closeTime || ''}`,
+      l.isActive ? 'Yes' : 'No',
+      l._count?.machines || 0, l._count?.staff || 0
+    ]);
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'locations.csv');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
+  };
+
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Locations Report', 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+
+    autoTable(doc, {
+      startY: 35,
+      head: [['Name', 'Address', 'City', 'State', 'ZIP', 'Phone', 'Active', 'Machines']],
+      body: locations.map(l => [
+        l.name, l.address, l.city, l.state, l.zipCode,
+        l.phone || '-', l.isActive ? 'Yes' : 'No',
+        l._count?.machines || 0
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save('locations.pdf');
+    toast.success('PDF exported successfully');
+  };
+
   if (loading) {
-    return <div className="loading"><div className="spinner"></div></div>;
+    return <div style={{ padding: 24 }}><CardSkeleton count={4} /></div>;
   }
 
   return (
@@ -80,14 +129,22 @@ function Locations() {
           <h1 className="page-title">Locations</h1>
           <p className="page-subtitle">Manage store locations</p>
         </div>
-        <button className="btn btn-primary" onClick={() => openModal()}>
-          <FiPlus /> Add Location
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-outline" onClick={handleExportCSV} title="Export CSV">
+            <FiDownload /> CSV
+          </button>
+          <button className="btn btn-outline" onClick={handleExportPDF} title="Export PDF">
+            <FiFileText /> PDF
+          </button>
+          <button className="btn btn-primary" onClick={() => openModal()}>
+            <FiPlus /> Add Location
+          </button>
+        </div>
       </div>
 
       <div className="grid-2">
         {locations.map(location => (
-          <div key={location.id} className="card">
+          <div key={location.id} className="card" onClick={() => setDetailData(location)} style={{ cursor: 'pointer' }}>
             <div className="flex-between" style={{ marginBottom: 16 }}>
               <h4>{location.name}</h4>
               <span className={`badge ${location.isActive ? 'badge-success' : 'badge-danger'}`}>
@@ -125,9 +182,11 @@ function Locations() {
               </div>
             </div>
 
-            <button className="btn btn-outline btn-sm" onClick={() => openModal(location)}>
-              <FiEdit /> Edit
-            </button>
+            <div onClick={e => e.stopPropagation()}>
+              <button className="btn btn-outline btn-sm" onClick={() => openModal(location)}>
+                <FiEdit /> Edit
+              </button>
+            </div>
           </div>
         ))}
 
@@ -242,6 +301,14 @@ function Locations() {
             </form>
           </div>
         </div>
+      )}
+
+      {detailData && (
+        <RowDetailModal
+          data={detailData}
+          title={detailData.name}
+          onClose={() => setDetailData(null)}
+        />
       )}
     </div>
   );
