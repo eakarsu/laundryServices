@@ -2,9 +2,261 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const { Parser } = require('json2csv');
+const { sendSubscriptionEmail } = require('../services/emailService');
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || '');
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_SUB_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || '';
+
+// Billing cycle → Stripe interval mapping
+const BILLING_CYCLE_MAP = {
+  WEEKLY: { interval: 'week', interval_count: 1 },
+  BIWEEKLY: { interval: 'week', interval_count: 2 },
+  MONTHLY: { interval: 'month', interval_count: 1 },
+  YEARLY: { interval: 'year', interval_count: 1 }
+};
+
+// ── Stripe: Create Subscription ─────────────────────────────────────────────
+// POST /api/subscriptions/create
+// Body: { customerId, planId, paymentMethodId (Stripe PM id) }
+router.post('/create', authenticateToken, async (req, res) => {
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(503).json({ error: 'Stripe is not configured' });
+    }
+
+    const { customerId, planId, paymentMethodId } = req.body;
+    const actualCustomerId = req.user.type === 'customer' ? req.user.id : customerId;
+
+    // Check for existing active subscription
+    const existingSubscription = await prisma.subscription.findFirst({
+      where: { customerId: actualCustomerId, status: 'ACTIVE' }
+    });
+    if (existingSubscription) {
+      return res.status(400).json({ error: 'Customer already has an active subscription' });
+    }
+
+    const [plan, customer] = await Promise.all([
+      prisma.subscriptionPlan.findUnique({ where: { id: planId } }),
+      prisma.customer.findUnique({ where: { id: actualCustomerId } })
+    ]);
+
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const cycleConfig = BILLING_CYCLE_MAP[plan.billingCycle] || BILLING_CYCLE_MAP.MONTHLY;
+
+    // Get or create Stripe customer
+    let stripeCustomerId = customer.stripeCustomerId;
+    if (!stripeCustomerId) {
+      const stripeCustomer = await stripe.customers.create({
+        email: customer.email,
+        name: `${customer.firstName} ${customer.lastName}`,
+        phone: customer.phone || undefined,
+        metadata: { customerId: customer.id }
+      });
+      stripeCustomerId = stripeCustomer.id;
+
+      // Store stripe customer id on our customer record (add field if it doesn't exist yet)
+      try {
+        await prisma.customer.update({
+          where: { id: customer.id },
+          data: { stripeCustomerId }
+        });
+      } catch (_) {
+        // Field may not exist in schema — silently continue
+      }
+    }
+
+    // Attach payment method if provided
+    if (paymentMethodId) {
+      await stripe.paymentMethods.attach(paymentMethodId, { customer: stripeCustomerId });
+      await stripe.customers.update(stripeCustomerId, {
+        invoice_settings: { default_payment_method: paymentMethodId }
+      });
+    }
+
+    // Create Stripe Price (inline) for this plan
+    const stripePrice = await stripe.prices.create({
+      unit_amount: Math.round(parseFloat(plan.price) * 100),
+      currency: 'usd',
+      recurring: {
+        interval: cycleConfig.interval,
+        interval_count: cycleConfig.interval_count
+      },
+      product_data: { name: plan.name }
+    });
+
+    // Create the Stripe subscription
+    const stripeSubscription = await stripe.subscriptions.create({
+      customer: stripeCustomerId,
+      items: [{ price: stripePrice.id }],
+      metadata: { planId, customerId: actualCustomerId },
+      expand: ['latest_invoice.payment_intent']
+    });
+
+    // Calculate dates
+    const startDate = new Date();
+    const renewalDate = new Date(stripeSubscription.current_period_end * 1000);
+
+    const subscription = await prisma.subscription.create({
+      data: {
+        customerId: actualCustomerId,
+        planId,
+        startDate,
+        renewalDate,
+        stripeSubId: stripeSubscription.id
+      },
+      include: { plan: true, customer: true }
+    });
+
+    // Send confirmation email (non-blocking)
+    if (customer.email) {
+      sendSubscriptionEmail(customer.email, 'created', {
+        customerName: `${customer.firstName} ${customer.lastName}`,
+        planName: plan.name,
+        amount: parseFloat(plan.price).toFixed(2),
+        nextRenewalDate: renewalDate.toLocaleDateString()
+      }).catch(err => console.error('Subscription email failed:', err.message));
+    }
+
+    res.status(201).json({
+      subscription,
+      stripeSubscriptionId: stripeSubscription.id,
+      clientSecret: stripeSubscription.latest_invoice?.payment_intent?.client_secret
+    });
+  } catch (error) {
+    console.error('Stripe subscription create error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Stripe: Subscription Webhook ────────────────────────────────────────────
+// POST /api/subscriptions/webhook
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+
+  let event;
+  try {
+    if (STRIPE_WEBHOOK_SECRET) {
+      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+    } else {
+      event = JSON.parse(req.body.toString());
+      console.warn('⚠️  STRIPE_WEBHOOK_SECRET not set — skipping signature verification');
+    }
+  } catch (err) {
+    console.error('Subscription webhook verification failed:', err.message);
+    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+  }
+
+  try {
+    switch (event.type) {
+      case 'invoice.paid': {
+        // Subscription renewal succeeded
+        const invoice = event.data.object;
+        const stripeSubId = invoice.subscription;
+
+        if (stripeSubId) {
+          const subscription = await prisma.subscription.findFirst({
+            where: { stripeSubId },
+            include: { plan: true, customer: true }
+          });
+
+          if (subscription) {
+            // Update renewal date from Stripe subscription period end
+            const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
+            const newRenewalDate = new Date(stripeSub.current_period_end * 1000);
+
+            await prisma.subscription.update({
+              where: { id: subscription.id },
+              data: { status: 'ACTIVE', renewalDate: newRenewalDate }
+            });
+
+            // Send renewal success email
+            if (subscription.customer?.email) {
+              sendSubscriptionEmail(subscription.customer.email, 'renewal_success', {
+                customerName: `${subscription.customer.firstName} ${subscription.customer.lastName}`,
+                planName: subscription.plan?.name || 'Subscription',
+                amount: (invoice.amount_paid / 100).toFixed(2),
+                nextRenewalDate: newRenewalDate.toLocaleDateString()
+              }).catch(err => console.error('Renewal email failed:', err.message));
+            }
+
+            console.log(`✅ Subscription ${stripeSubId} renewed successfully`);
+          }
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        // Renewal payment failed
+        const invoice = event.data.object;
+        const stripeSubId = invoice.subscription;
+
+        if (stripeSubId) {
+          const subscription = await prisma.subscription.findFirst({
+            where: { stripeSubId },
+            include: { plan: true, customer: true }
+          });
+
+          if (subscription) {
+            // Don't immediately cancel — Stripe retries; mark it so UI can show warning
+            console.warn(`⚠️  Subscription renewal payment failed for ${stripeSubId}`);
+
+            if (subscription.customer?.email) {
+              sendSubscriptionEmail(subscription.customer.email, 'renewal_failed', {
+                customerName: `${subscription.customer.firstName} ${subscription.customer.lastName}`,
+                planName: subscription.plan?.name || 'Subscription',
+                amount: (invoice.amount_due / 100).toFixed(2),
+                nextRenewalDate: ''
+              }).catch(err => console.error('Renewal failure email failed:', err.message));
+            }
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        // Subscription cancelled in Stripe (e.g. after all retries exhausted)
+        const stripeSub = event.data.object;
+
+        const subscription = await prisma.subscription.findFirst({
+          where: { stripeSubId: stripeSub.id },
+          include: { customer: true, plan: true }
+        });
+
+        if (subscription) {
+          await prisma.subscription.update({
+            where: { id: subscription.id },
+            data: { status: 'CANCELLED', endDate: new Date() }
+          });
+
+          if (subscription.customer?.email) {
+            sendSubscriptionEmail(subscription.customer.email, 'cancelled', {
+              customerName: `${subscription.customer.firstName} ${subscription.customer.lastName}`,
+              planName: subscription.plan?.name || 'Subscription',
+              amount: '',
+              nextRenewalDate: ''
+            }).catch(err => console.error('Cancellation email failed:', err.message));
+          }
+
+          console.log(`🚫 Subscription ${stripeSub.id} cancelled`);
+        }
+        break;
+      }
+
+      default:
+        console.log(`Stripe subscription webhook: ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Subscription webhook handler error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Get all subscription plans
 router.get('/plans', async (req, res) => {

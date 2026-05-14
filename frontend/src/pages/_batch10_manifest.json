@@ -1,0 +1,24 @@
+{
+  "marker": "// === Batch 10 Gaps & Frontend Mounts ===",
+  "project": "laundryServices",
+  "items": [
+    "<Route path=\"/batch10/cf-vision-based-garment-damage-assessment-shrinkage\" element={<CfVisionBasedGarmentDamageAssessmentShrinkage />} />",
+    "<Route path=\"/batch10/cf-subscription-optimization-agent-frequency-add-ons\" element={<CfSubscriptionOptimizationAgentFrequencyAddOns />} />",
+    "<Route path=\"/batch10/cf-fabric-care-advisor-care-label-ocr\" element={<CfFabricCareAdvisorCareLabelOcr />} />",
+    "<Route path=\"/batch10/cf-driver-earnings-optimizer-tips-fairness-model\" element={<CfDriverEarningsOptimizerTipsFairnessModel />} />",
+    "<Route path=\"/batch10/cf-corporate-b2b-agent-bulk-orders-contract\" element={<CfCorporateB2bAgentBulkOrdersContract />} />",
+    "<Route path=\"/batch10/cf-sustainability-dashboard-water-energy-chemical-per\" element={<CfSustainabilityDashboardWaterEnergyChemicalPer />} />",
+    "<Route path=\"/batch10/gap-no-automated-damage-loss-claim-adjudication\" element={<GapNoAutomatedDamageLossClaimAdjudication />} />",
+    "<Route path=\"/batch10/gap-no-fabric-care-compliance-ai-per\" element={<GapNoFabricCareComplianceAiPer />} />",
+    "<Route path=\"/batch10/gap-no-subscription-personalization-preferences-schedule-auto\" element={<GapNoSubscriptionPersonalizationPreferencesScheduleAuto />} />",
+    "<Route path=\"/batch10/gap-no-environmental-sustainability-tracking-ai\" element={<GapNoEnvironmentalSustainabilityTrackingAi />} />",
+    "<Route path=\"/batch10/gap-no-b2b-corporate-account-agent\" element={<GapNoB2bCorporateAccountAgent />} />",
+    "<Route path=\"/batch10/gap-no-driver-earnings-optimization-ai\" element={<GapNoDriverEarningsOptimizationAi />} />",
+    "<Route path=\"/batch10/gap-no-laundromat-partner-network-management\" element={<GapNoLaundromatPartnerNetworkManagement />} />",
+    "<Route path=\"/batch10/gap-no-corporate-b2b-bulk-order-portal\" element={<GapNoCorporateB2bBulkOrderPortal />} />",
+    "<Route path=\"/batch10/gap-no-environmental-dashboard-water-chemical-usage\" element={<GapNoEnvironmentalDashboardWaterChemicalUsage />} />",
+    "<Route path=\"/batch10/gap-no-equipment-supplier-marketplace\" element={<GapNoEquipmentSupplierMarketplace />} />",
+    "<Route path=\"/batch10/gap-no-referral-program-engine\" element={<GapNoReferralProgramEngine />} />",
+    "<Route path=\"/batch10/gap-no-insurance-guarantee-policies-module\" element={<GapNoInsuranceGuaranteePoliciesModule />} />"
+  ]
+}

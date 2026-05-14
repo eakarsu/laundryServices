@@ -3,6 +3,8 @@ const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const { v4: uuidv4 } = require('uuid');
 const { Parser } = require('json2csv');
+const { sendOrderStatusEmail } = require('../services/emailService');
+const { sendOrderStatusSMS } = require('../services/smsService');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -330,23 +332,48 @@ router.patch('/:id/status', authenticateToken, authorizeRoles('ADMIN', 'MANAGER'
       include: { customer: true }
     });
 
-    // Send notification for key status changes
-    if (['READY', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(status)) {
-      const messageMap = {
-        READY: `Your order ${order.orderNumber} is ready for pickup!`,
-        OUT_FOR_DELIVERY: `Your order ${order.orderNumber} is out for delivery!`,
-        DELIVERED: `Your order ${order.orderNumber} has been delivered!`
+    // Send notifications for all status changes
+    const notifyStatuses = ['PICKED_UP', 'READY', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'];
+    if (notifyStatuses.includes(status)) {
+      const typeMap = {
+        PICKED_UP: 'ORDER_CONFIRMATION',
+        READY: 'ORDER_READY',
+        OUT_FOR_DELIVERY: 'DELIVERY_UPDATE',
+        DELIVERED: 'ORDER_DELIVERED',
+        CANCELLED: 'ORDER_CONFIRMATION'
       };
 
+      const orderDetails = {
+        orderNumber: order.orderNumber,
+        customerName: `${order.customer.firstName} ${order.customer.lastName}`,
+        total: order.total,
+        estimatedReady: order.estimatedReady
+      };
+
+      // Create notification record
       await prisma.notification.create({
         data: {
           customerId: order.customerId,
           orderId: order.id,
-          type: status === 'READY' ? 'ORDER_READY' : 'ORDER_DELIVERED',
-          channel: 'SMS',
-          message: messageMap[status]
+          type: typeMap[status] || 'DELIVERY_UPDATE',
+          channel: 'EMAIL',
+          subject: `Order ${order.orderNumber} — ${status.replace(/_/g, ' ')}`,
+          message: `Your order ${order.orderNumber} status has been updated to ${status.replace(/_/g, ' ')}.`
         }
       });
+
+      // Send real email and SMS notifications (fire-and-forget, don't block response)
+      if (order.customer.email) {
+        sendOrderStatusEmail(order.customer.email, status, orderDetails).catch(err =>
+          console.error(`Email notification failed for order ${order.id}:`, err.message)
+        );
+      }
+
+      if (order.customer.phone) {
+        sendOrderStatusSMS(order.customer.phone, status, orderDetails).catch(err =>
+          console.error(`SMS notification failed for order ${order.id}:`, err.message)
+        );
+      }
     }
 
     res.json(order);

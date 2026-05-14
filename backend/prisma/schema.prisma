@@ -10,31 +10,31 @@ datasource db {
 // ============ CUSTOMER MANAGEMENT ============
 
 model Customer {
-  id                String            @id @default(uuid())
-  email             String            @unique
+  id                String      @id @default(uuid())
+  email             String      @unique
   phone             String?
   firstName         String
   lastName          String
   passwordHash      String
-  emailVerified     Boolean           @default(false)
+  emailVerified     Boolean     @default(false)
   verificationToken String?
-  starchPreference  StarchLevel       @default(MEDIUM)
-  hangerPreference  Boolean           @default(true)
-  creasePreference  Boolean           @default(false)
+  starchPreference  StarchLevel @default(MEDIUM)
+  hangerPreference  Boolean     @default(true)
+  creasePreference  Boolean     @default(false)
   notes             String?
-  creditBalance     Decimal           @default(0) @db.Decimal(10, 2)
-  loyaltyPoints     Int               @default(0)
-  isActive          Boolean           @default(true)
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  creditBalance     Decimal     @default(0) @db.Decimal(10, 2)
+  loyaltyPoints     Int         @default(0)
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
-  addresses         Address[]
-  paymentMethods    PaymentMethod[]
-  orders            Order[]
-  subscriptions     Subscription[]
-  giftCards         GiftCard[]
-  notifications     Notification[]
-  qualityIssues     QualityIssue[]
+  addresses      Address[]
+  paymentMethods PaymentMethod[]
+  orders         Order[]
+  subscriptions  Subscription[]
+  giftCards      GiftCard[]
+  notifications  Notification[]
+  qualityIssues  QualityIssue[]
 }
 
 enum StarchLevel {
@@ -45,38 +45,38 @@ enum StarchLevel {
 }
 
 model Address {
-  id            String    @id @default(uuid())
-  customerId    String
-  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  label         String    // "Home", "Work", etc.
-  street        String
-  apartment     String?
-  city          String
-  state         String
-  zipCode       String
-  latitude      Float?
-  longitude     Float?
-  isDefault     Boolean   @default(false)
-  instructions  String?
-  createdAt     DateTime  @default(now())
+  id           String   @id @default(uuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label        String // "Home", "Work", etc.
+  street       String
+  apartment    String?
+  city         String
+  state        String
+  zipCode      String
+  latitude     Float?
+  longitude    Float?
+  isDefault    Boolean  @default(false)
+  instructions String?
+  createdAt    DateTime @default(now())
 
-  pickups       Pickup[]
-  deliveries    Delivery[]
+  pickups    Pickup[]
+  deliveries Delivery[]
 }
 
 model PaymentMethod {
-  id              String    @id @default(uuid())
+  id              String      @id @default(uuid())
   customerId      String
-  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
   type            PaymentType
   lastFour        String?
   expiryMonth     Int?
   expiryYear      Int?
   stripePaymentId String?
-  isDefault       Boolean   @default(false)
-  createdAt       DateTime  @default(now())
+  isDefault       Boolean     @default(false)
+  createdAt       DateTime    @default(now())
 
-  payments        Payment[]
+  payments Payment[]
 }
 
 enum PaymentType {
@@ -91,33 +91,33 @@ enum PaymentType {
 // ============ ORDER MANAGEMENT ============
 
 model Order {
-  id                String        @id @default(uuid())
-  orderNumber       String        @unique
-  customerId        String
-  customer          Customer      @relation(fields: [customerId], references: [id])
-  status            OrderStatus   @default(PENDING)
-  isRush            Boolean       @default(false)
-  rushFee           Decimal       @default(0) @db.Decimal(10, 2)
+  id                  String      @id @default(uuid())
+  orderNumber         String      @unique
+  customerId          String
+  customer            Customer    @relation(fields: [customerId], references: [id])
+  status              OrderStatus @default(PENDING)
+  isRush              Boolean     @default(false)
+  rushFee             Decimal     @default(0) @db.Decimal(10, 2)
   specialInstructions String?
-  subtotal          Decimal       @default(0) @db.Decimal(10, 2)
-  discount          Decimal       @default(0) @db.Decimal(10, 2)
-  tax               Decimal       @default(0) @db.Decimal(10, 2)
-  total             Decimal       @default(0) @db.Decimal(10, 2)
-  paidAmount        Decimal       @default(0) @db.Decimal(10, 2)
-  estimatedReady    DateTime?
-  actualReady       DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  subtotal            Decimal     @default(0) @db.Decimal(10, 2)
+  discount            Decimal     @default(0) @db.Decimal(10, 2)
+  tax                 Decimal     @default(0) @db.Decimal(10, 2)
+  total               Decimal     @default(0) @db.Decimal(10, 2)
+  paidAmount          Decimal     @default(0) @db.Decimal(10, 2)
+  estimatedReady      DateTime?
+  actualReady         DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
-  items             OrderItem[]
-  pickup            Pickup?
-  delivery          Delivery?
-  payments          Payment[]
-  notifications     Notification[]
-  couponId          String?
-  coupon            Coupon?       @relation(fields: [couponId], references: [id])
-  qualityIssues     QualityIssue[]
-  trackingHistory   OrderTracking[]
+  items           OrderItem[]
+  pickup          Pickup?
+  delivery        Delivery?
+  payments        Payment[]
+  notifications   Notification[]
+  couponId        String?
+  coupon          Coupon?         @relation(fields: [couponId], references: [id])
+  qualityIssues   QualityIssue[]
+  trackingHistory OrderTracking[]
 }
 
 enum OrderStatus {
@@ -135,24 +135,24 @@ enum OrderStatus {
 }
 
 model OrderItem {
-  id              String        @id @default(uuid())
-  orderId         String
-  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  serviceId       String
-  service         Service       @relation(fields: [serviceId], references: [id])
-  garmentTypeId   String
-  garmentType     GarmentType   @relation(fields: [garmentTypeId], references: [id])
-  quantity        Int           @default(1)
-  tagNumber       String?
-  barcode         String?
-  unitPrice       Decimal       @db.Decimal(10, 2)
-  totalPrice      Decimal       @db.Decimal(10, 2)
-  specialNotes    String?
-  stainNotes      String?
-  status          ItemStatus    @default(PENDING)
-  createdAt       DateTime      @default(now())
+  id            String      @id @default(uuid())
+  orderId       String
+  order         Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  serviceId     String
+  service       Service     @relation(fields: [serviceId], references: [id])
+  garmentTypeId String
+  garmentType   GarmentType @relation(fields: [garmentTypeId], references: [id])
+  quantity      Int         @default(1)
+  tagNumber     String?
+  barcode       String?
+  unitPrice     Decimal     @db.Decimal(10, 2)
+  totalPrice    Decimal     @db.Decimal(10, 2)
+  specialNotes  String?
+  stainNotes    String?
+  status        ItemStatus  @default(PENDING)
+  createdAt     DateTime    @default(now())
 
-  alterations     Alteration[]
+  alterations Alteration[]
 }
 
 enum ItemStatus {
@@ -163,13 +163,13 @@ enum ItemStatus {
 }
 
 model GarmentType {
-  id          String      @id @default(uuid())
-  name        String      @unique
-  category    String      // "Tops", "Bottoms", "Outerwear", etc.
-  basePrice   Decimal     @db.Decimal(10, 2)
-  isActive    Boolean     @default(true)
+  id        String  @id @default(uuid())
+  name      String  @unique
+  category  String // "Tops", "Bottoms", "Outerwear", etc.
+  basePrice Decimal @db.Decimal(10, 2)
+  isActive  Boolean @default(true)
 
-  orderItems  OrderItem[]
+  orderItems    OrderItem[]
   servicePrices ServicePrice[]
 }
 
@@ -198,41 +198,41 @@ enum ServiceCategory {
 // ============ PICKUP & DELIVERY ============
 
 model Driver {
-  id            String    @id @default(uuid())
-  email         String    @unique
+  id            String   @id @default(uuid())
+  email         String   @unique
   phone         String
   firstName     String
   lastName      String
   passwordHash  String
   licenseNumber String?
   vehicleInfo   String?
-  isActive      Boolean   @default(true)
-  isAvailable   Boolean   @default(true)
+  isActive      Boolean  @default(true)
+  isAvailable   Boolean  @default(true)
   currentLat    Float?
   currentLng    Float?
-  createdAt     DateTime  @default(now())
+  createdAt     DateTime @default(now())
 
-  routes        Route[]
-  pickups       Pickup[]
-  deliveries    Delivery[]
+  routes          Route[]
+  pickups         Pickup[]
+  deliveries      Delivery[]
   locationHistory DriverLocation[]
 }
 
 model Route {
-  id            String        @id @default(uuid())
-  driverId      String
-  driver        Driver        @relation(fields: [driverId], references: [id])
-  date          DateTime
-  status        RouteStatus   @default(PLANNED)
-  startTime     DateTime?
-  endTime       DateTime?
-  totalDistance Float?
-  totalStops    Int           @default(0)
-  optimizedOrder String?      // JSON array of stop order
-  createdAt     DateTime      @default(now())
+  id             String      @id @default(uuid())
+  driverId       String
+  driver         Driver      @relation(fields: [driverId], references: [id])
+  date           DateTime
+  status         RouteStatus @default(PLANNED)
+  startTime      DateTime?
+  endTime        DateTime?
+  totalDistance  Float?
+  totalStops     Int         @default(0)
+  optimizedOrder String? // JSON array of stop order
+  createdAt      DateTime    @default(now())
 
-  pickups       Pickup[]
-  deliveries    Delivery[]
+  pickups    Pickup[]
+  deliveries Delivery[]
 }
 
 enum RouteStatus {
@@ -243,23 +243,23 @@ enum RouteStatus {
 }
 
 model Pickup {
-  id              String        @id @default(uuid())
-  orderId         String        @unique
-  order           Order         @relation(fields: [orderId], references: [id])
-  addressId       String
-  address         Address       @relation(fields: [addressId], references: [id])
-  driverId        String?
-  driver          Driver?       @relation(fields: [driverId], references: [id])
-  routeId         String?
-  route           Route?        @relation(fields: [routeId], references: [id])
-  scheduledStart  DateTime
-  scheduledEnd    DateTime
-  actualTime      DateTime?
-  status          PickupStatus  @default(SCHEDULED)
-  notes           String?
-  photoUrl        String?
-  signature       String?
-  createdAt       DateTime      @default(now())
+  id             String       @id @default(uuid())
+  orderId        String       @unique
+  order          Order        @relation(fields: [orderId], references: [id])
+  addressId      String
+  address        Address      @relation(fields: [addressId], references: [id])
+  driverId       String?
+  driver         Driver?      @relation(fields: [driverId], references: [id])
+  routeId        String?
+  route          Route?       @relation(fields: [routeId], references: [id])
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  actualTime     DateTime?
+  status         PickupStatus @default(SCHEDULED)
+  notes          String?
+  photoUrl       String?
+  signature      String?
+  createdAt      DateTime     @default(now())
 }
 
 enum PickupStatus {
@@ -272,25 +272,25 @@ enum PickupStatus {
 }
 
 model Delivery {
-  id              String          @id @default(uuid())
-  orderId         String          @unique
-  order           Order           @relation(fields: [orderId], references: [id])
-  addressId       String
-  address         Address         @relation(fields: [addressId], references: [id])
-  driverId        String?
-  driver          Driver?         @relation(fields: [driverId], references: [id])
-  routeId         String?
-  route           Route?          @relation(fields: [routeId], references: [id])
-  scheduledStart  DateTime
-  scheduledEnd    DateTime
-  actualTime      DateTime?
-  status          DeliveryStatus  @default(SCHEDULED)
-  notes           String?
-  photoUrl        String?
-  signature       String?
-  lockerId        String?
-  locker          Locker?         @relation(fields: [lockerId], references: [id])
-  createdAt       DateTime        @default(now())
+  id             String         @id @default(uuid())
+  orderId        String         @unique
+  order          Order          @relation(fields: [orderId], references: [id])
+  addressId      String
+  address        Address        @relation(fields: [addressId], references: [id])
+  driverId       String?
+  driver         Driver?        @relation(fields: [driverId], references: [id])
+  routeId        String?
+  route          Route?         @relation(fields: [routeId], references: [id])
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  actualTime     DateTime?
+  status         DeliveryStatus @default(SCHEDULED)
+  notes          String?
+  photoUrl       String?
+  signature      String?
+  lockerId       String?
+  locker         Locker?        @relation(fields: [lockerId], references: [id])
+  createdAt      DateTime       @default(now())
 }
 
 enum DeliveryStatus {
@@ -304,15 +304,15 @@ enum DeliveryStatus {
 }
 
 model Locker {
-  id          String      @id @default(uuid())
-  name        String
-  location    String
-  address     String
-  totalUnits  Int
+  id             String  @id @default(uuid())
+  name           String
+  location       String
+  address        String
+  totalUnits     Int
   availableUnits Int
-  isActive    Boolean     @default(true)
+  isActive       Boolean @default(true)
 
-  deliveries  Delivery[]
+  deliveries Delivery[]
 }
 
 // ============ PRICING ============
@@ -329,38 +329,38 @@ model ServicePrice {
 }
 
 model Alteration {
-  id            String      @id @default(uuid())
-  orderItemId   String
-  orderItem     OrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  typeId        String
-  type          AlterationType @relation(fields: [typeId], references: [id])
-  price         Decimal     @db.Decimal(10, 2)
-  notes         String?
-  status        ItemStatus  @default(PENDING)
+  id          String         @id @default(uuid())
+  orderItemId String
+  orderItem   OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  typeId      String
+  type        AlterationType @relation(fields: [typeId], references: [id])
+  price       Decimal        @db.Decimal(10, 2)
+  notes       String?
+  status      ItemStatus     @default(PENDING)
 }
 
 model AlterationType {
-  id          String      @id @default(uuid())
-  name        String      @unique
+  id          String  @id @default(uuid())
+  name        String  @unique
   description String?
-  basePrice   Decimal     @db.Decimal(10, 2)
-  isActive    Boolean     @default(true)
+  basePrice   Decimal @db.Decimal(10, 2)
+  isActive    Boolean @default(true)
 
   alterations Alteration[]
 }
 
 model Subscription {
-  id              String            @id @default(uuid())
-  customerId      String
-  customer        Customer          @relation(fields: [customerId], references: [id])
-  planId          String
-  plan            SubscriptionPlan  @relation(fields: [planId], references: [id])
-  status          SubscriptionStatus @default(ACTIVE)
-  startDate       DateTime
-  endDate         DateTime?
-  renewalDate     DateTime
-  stripeSubId     String?
-  createdAt       DateTime          @default(now())
+  id          String             @id @default(uuid())
+  customerId  String
+  customer    Customer           @relation(fields: [customerId], references: [id])
+  planId      String
+  plan        SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status      SubscriptionStatus @default(ACTIVE)
+  startDate   DateTime
+  endDate     DateTime?
+  renewalDate DateTime
+  stripeSubId String?
+  createdAt   DateTime           @default(now())
 }
 
 enum SubscriptionStatus {
@@ -371,18 +371,18 @@ enum SubscriptionStatus {
 }
 
 model SubscriptionPlan {
-  id              String          @id @default(uuid())
-  name            String          @unique
+  id              String       @id @default(uuid())
+  name            String       @unique
   description     String?
-  price           Decimal         @db.Decimal(10, 2)
+  price           Decimal      @db.Decimal(10, 2)
   billingCycle    BillingCycle
   itemLimit       Int?
-  discountPercent Int             @default(0)
-  freePickups     Int             @default(0)
-  freeDeliveries  Int             @default(0)
-  isActive        Boolean         @default(true)
+  discountPercent Int          @default(0)
+  freePickups     Int          @default(0)
+  freeDeliveries  Int          @default(0)
+  isActive        Boolean      @default(true)
 
-  subscriptions   Subscription[]
+  subscriptions Subscription[]
 }
 
 enum BillingCycle {
@@ -393,20 +393,20 @@ enum BillingCycle {
 }
 
 model Coupon {
-  id              String        @id @default(uuid())
-  code            String        @unique
-  description     String?
-  discountType    DiscountType
-  discountValue   Decimal       @db.Decimal(10, 2)
-  minOrderAmount  Decimal?      @db.Decimal(10, 2)
-  maxDiscount     Decimal?      @db.Decimal(10, 2)
-  usageLimit      Int?
-  usageCount      Int           @default(0)
-  startDate       DateTime
-  endDate         DateTime
-  isActive        Boolean       @default(true)
+  id             String       @id @default(uuid())
+  code           String       @unique
+  description    String?
+  discountType   DiscountType
+  discountValue  Decimal      @db.Decimal(10, 2)
+  minOrderAmount Decimal?     @db.Decimal(10, 2)
+  maxDiscount    Decimal?     @db.Decimal(10, 2)
+  usageLimit     Int?
+  usageCount     Int          @default(0)
+  startDate      DateTime
+  endDate        DateTime
+  isActive       Boolean      @default(true)
 
-  orders          Order[]
+  orders Order[]
 }
 
 enum DiscountType {
@@ -415,40 +415,40 @@ enum DiscountType {
 }
 
 model GiftCard {
-  id          String    @id @default(uuid())
-  code        String    @unique
-  customerId  String?
-  customer    Customer? @relation(fields: [customerId], references: [id])
-  balance     Decimal   @db.Decimal(10, 2)
-  initialValue Decimal  @db.Decimal(10, 2)
-  expiryDate  DateTime?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
+  id           String    @id @default(uuid())
+  code         String    @unique
+  customerId   String?
+  customer     Customer? @relation(fields: [customerId], references: [id])
+  balance      Decimal   @db.Decimal(10, 2)
+  initialValue Decimal   @db.Decimal(10, 2)
+  expiryDate   DateTime?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
 }
 
 // ============ MACHINE MANAGEMENT ============
 
 model Machine {
-  id              String          @id @default(uuid())
-  machineNumber   String          @unique
+  id              String        @id @default(uuid())
+  machineNumber   String        @unique
   type            MachineType
   brand           String?
   model           String?
   capacity        String?
-  status          MachineStatus   @default(AVAILABLE)
+  status          MachineStatus @default(AVAILABLE)
   currentCycleEnd DateTime?
-  pricePerCycle   Decimal         @db.Decimal(10, 2)
+  pricePerCycle   Decimal       @db.Decimal(10, 2)
   locationId      String
-  location        Location        @relation(fields: [locationId], references: [id])
+  location        Location      @relation(fields: [locationId], references: [id])
   lastMaintenance DateTime?
   nextMaintenance DateTime?
-  totalCycles     Int             @default(0)
-  isRemoteEnabled Boolean         @default(false)
+  totalCycles     Int           @default(0)
+  isRemoteEnabled Boolean       @default(false)
   iotDeviceId     String?
-  createdAt       DateTime        @default(now())
+  createdAt       DateTime      @default(now())
 
-  usages          MachineUsage[]
-  maintenances    Maintenance[]
+  usages       MachineUsage[]
+  maintenances Maintenance[]
 }
 
 enum MachineType {
@@ -468,30 +468,30 @@ enum MachineStatus {
 }
 
 model Location {
-  id          String    @id @default(uuid())
-  name        String
-  address     String
-  city        String
-  state       String
-  zipCode     String
-  phone       String?
-  isActive    Boolean   @default(true)
-  openTime    String?
-  closeTime   String?
+  id        String  @id @default(uuid())
+  name      String
+  address   String
+  city      String
+  state     String
+  zipCode   String
+  phone     String?
+  isActive  Boolean @default(true)
+  openTime  String?
+  closeTime String?
 
-  machines    Machine[]
-  staff       Staff[]
+  machines Machine[]
+  staff    Staff[]
 }
 
 model MachineUsage {
-  id            String    @id @default(uuid())
+  id            String      @id @default(uuid())
   machineId     String
-  machine       Machine   @relation(fields: [machineId], references: [id])
+  machine       Machine     @relation(fields: [machineId], references: [id])
   customerId    String?
   startTime     DateTime
   endTime       DateTime?
   cycleType     String?
-  amountPaid    Decimal   @db.Decimal(10, 2)
+  amountPaid    Decimal     @db.Decimal(10, 2)
   paymentMethod String?
   status        UsageStatus @default(IN_PROGRESS)
 }
@@ -503,17 +503,17 @@ enum UsageStatus {
 }
 
 model Maintenance {
-  id            String            @id @default(uuid())
-  machineId     String
-  machine       Machine           @relation(fields: [machineId], references: [id])
-  type          MaintenanceType
-  description   String?
-  scheduledDate DateTime
-  completedDate DateTime?
-  cost          Decimal?          @db.Decimal(10, 2)
+  id             String            @id @default(uuid())
+  machineId      String
+  machine        Machine           @relation(fields: [machineId], references: [id])
+  type           MaintenanceType
+  description    String?
+  scheduledDate  DateTime
+  completedDate  DateTime?
+  cost           Decimal?          @db.Decimal(10, 2)
   technicianName String?
-  notes         String?
-  status        MaintenanceStatus @default(SCHEDULED)
+  notes          String?
+  status         MaintenanceStatus @default(SCHEDULED)
 }
 
 enum MaintenanceType {
@@ -534,17 +534,17 @@ enum MaintenanceStatus {
 // ============ POINT OF SALE ============
 
 model Payment {
-  id              String        @id @default(uuid())
+  id              String         @id @default(uuid())
   orderId         String
-  order           Order         @relation(fields: [orderId], references: [id])
+  order           Order          @relation(fields: [orderId], references: [id])
   paymentMethodId String?
   paymentMethod   PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  amount          Decimal       @db.Decimal(10, 2)
+  amount          Decimal        @db.Decimal(10, 2)
   type            PaymentType
-  status          PaymentStatus @default(PENDING)
+  status          PaymentStatus  @default(PENDING)
   stripePaymentId String?
   reference       String?
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime       @default(now())
 }
 
 enum PaymentStatus {
@@ -556,30 +556,30 @@ enum PaymentStatus {
 }
 
 model Receipt {
-  id          String    @id @default(uuid())
-  orderId     String
-  receiptNumber String  @unique
-  amount      Decimal   @db.Decimal(10, 2)
-  printedAt   DateTime?
-  emailedAt   DateTime?
-  createdAt   DateTime  @default(now())
+  id            String    @id @default(uuid())
+  orderId       String
+  receiptNumber String    @unique
+  amount        Decimal   @db.Decimal(10, 2)
+  printedAt     DateTime?
+  emailedAt     DateTime?
+  createdAt     DateTime  @default(now())
 }
 
 // ============ STAFF & AUTH ============
 
 model Staff {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  phone         String?
-  firstName     String
-  lastName      String
-  passwordHash  String
-  role          StaffRole
-  locationId    String?
-  location      Location? @relation(fields: [locationId], references: [id])
-  isActive      Boolean   @default(true)
-  lastLogin     DateTime?
-  createdAt     DateTime  @default(now())
+  id           String    @id @default(uuid())
+  email        String    @unique
+  phone        String?
+  firstName    String
+  lastName     String
+  passwordHash String
+  role         StaffRole
+  locationId   String?
+  location     Location? @relation(fields: [locationId], references: [id])
+  isActive     Boolean   @default(true)
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
 }
 
 enum StaffRole {
@@ -602,18 +602,18 @@ model PasswordReset {
 // ============ NOTIFICATIONS ============
 
 model Notification {
-  id          String            @id @default(uuid())
-  customerId  String?
-  customer    Customer?         @relation(fields: [customerId], references: [id])
-  orderId     String?
-  order       Order?            @relation(fields: [orderId], references: [id])
-  type        NotificationType
-  channel     NotificationChannel
-  subject     String?
-  message     String
-  status      NotificationStatus @default(PENDING)
-  sentAt      DateTime?
-  createdAt   DateTime          @default(now())
+  id         String              @id @default(uuid())
+  customerId String?
+  customer   Customer?           @relation(fields: [customerId], references: [id])
+  orderId    String?
+  order      Order?              @relation(fields: [orderId], references: [id])
+  type       NotificationType
+  channel    NotificationChannel
+  subject    String?
+  message    String
+  status     NotificationStatus  @default(PENDING)
+  sentAt     DateTime?
+  createdAt  DateTime            @default(now())
 }
 
 enum NotificationType {
@@ -642,69 +642,69 @@ enum NotificationStatus {
 // ============ AI FEATURES ============
 
 model AIEstimate {
-  id            String    @id @default(uuid())
-  customerId    String?
-  imageUrl      String?
-  description   String?
+  id             String   @id @default(uuid())
+  customerId     String?
+  imageUrl       String?
+  description    String?
   estimatedItems Json?
-  totalEstimate Decimal?  @db.Decimal(10, 2)
-  confidence    Float?
-  createdAt     DateTime  @default(now())
+  totalEstimate  Decimal? @db.Decimal(10, 2)
+  confidence     Float?
+  createdAt      DateTime @default(now())
 }
 
 model AIStainAnalysis {
-  id              String    @id @default(uuid())
-  orderItemId     String?
-  imageUrl        String?
-  stainType       String?
-  treatment       String?
-  confidence      Float?
-  createdAt       DateTime  @default(now())
+  id          String   @id @default(uuid())
+  orderItemId String?
+  imageUrl    String?
+  stainType   String?
+  treatment   String?
+  confidence  Float?
+  createdAt   DateTime @default(now())
 }
 
 model AIChatHistory {
-  id          String    @id @default(uuid())
-  customerId  String?
-  sessionId   String
-  role        String
-  message     String
-  createdAt   DateTime  @default(now())
+  id         String   @id @default(uuid())
+  customerId String?
+  sessionId  String
+  role       String
+  message    String
+  createdAt  DateTime @default(now())
 }
 
 model AIDemandPrediction {
-  id              String    @id @default(uuid())
-  locationId      String?
-  date            DateTime
-  predictedOrders Int
+  id               String   @id @default(uuid())
+  locationId       String?
+  date             DateTime
+  predictedOrders  Int
   predictedRevenue Decimal? @db.Decimal(10, 2)
-  confidence      Float?
-  createdAt       DateTime  @default(now())
+  confidence       Float?
+  createdAt        DateTime @default(now())
 }
 
 // ============ QUALITY ISSUE REPORTING ============
 
 model QualityIssue {
-  id              String            @id @default(uuid())
-  orderId         String
-  order           Order             @relation(fields: [orderId], references: [id])
-  orderItemId     String?
-  customerId      String
-  customer        Customer          @relation(fields: [customerId], references: [id])
-  reportedBy      String?           // Staff ID who reported
-  issueType       QualityIssueType
-  severity        IssueSeverity     @default(MEDIUM)
-  status          IssueStatus       @default(OPEN)
-  title           String
-  description     String
-  photoUrls       String[]          @default([])
-  resolution      String?
-  resolvedBy      String?
-  resolvedAt      DateTime?
-  compensationType CompensationType?
-  compensationAmount Decimal?       @db.Decimal(10, 2)
-  customerNotified Boolean          @default(false)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                 String            @id @default(uuid())
+  orderId            String
+  order              Order             @relation(fields: [orderId], references: [id])
+  orderItemId        String?
+  customerId         String
+  customer           Customer          @relation(fields: [customerId], references: [id])
+  reportedBy         String? // Staff ID who reported
+  issueType          QualityIssueType
+  severity           IssueSeverity     @default(MEDIUM)
+  status             IssueStatus       @default(OPEN)
+  title              String
+  description        String
+  photoUrls          String[]          @default([])
+  resolution         String?
+  resolvedBy         String?
+  resolvedAt         DateTime?
+  compensationType   CompensationType?
+  compensationAmount Decimal?          @db.Decimal(10, 2)
+  customerNotified   Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 }
 
 enum QualityIssueType {
@@ -749,27 +749,95 @@ enum CompensationType {
 // ============ REAL-TIME TRACKING ============
 
 model DriverLocation {
-  id          String    @id @default(uuid())
-  driverId    String
-  driver      Driver    @relation(fields: [driverId], references: [id])
-  latitude    Float
-  longitude   Float
-  heading     Float?
-  speed       Float?
-  accuracy    Float?
+  id           String   @id @default(uuid())
+  driverId     String
+  driver       Driver   @relation(fields: [driverId], references: [id])
+  latitude     Float
+  longitude    Float
+  heading      Float?
+  speed        Float?
+  accuracy     Float?
   batteryLevel Int?
-  isOnline    Boolean   @default(true)
-  timestamp   DateTime  @default(now())
+  isOnline     Boolean  @default(true)
+  timestamp    DateTime @default(now())
 }
 
 model OrderTracking {
-  id          String    @id @default(uuid())
-  orderId     String
-  order       Order     @relation(fields: [orderId], references: [id])
-  status      String
-  location    String?
-  note        String?
-  latitude    Float?
-  longitude   Float?
-  timestamp   DateTime  @default(now())
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  status    String
+  location  String?
+  note      String?
+  latitude  Float?
+  longitude Float?
+  timestamp DateTime @default(now())
+}
+
+// ============ AI RESULT AUDIT LOG ============
+//
+// Generic JSONB-backed log of every AI call: input, output, success, latency.
+// Used by all /api/ai/* endpoints via persistAIResult().
+model AIResult {
+  id           String   @id @default(uuid())
+  feature      String // 'estimate' | 'stain' | 'chat' | 'predict-demand' | 'predict-maintenance' | 'reactivation' | 'quality-check' | 'churn-score' | 'whatsapp'
+  model        String?
+  userId       String?
+  input        Json     @default("{}")
+  output       Json?
+  success      Boolean  @default(true)
+  errorMessage String?
+  latencyMs    Int?
+  createdAt    DateTime @default(now())
+
+  @@index([feature, createdAt])
+  @@index([userId, createdAt])
+  @@map("ai_results")
+}
+
+// ============ AI GARMENT LIFECYCLE EVENTS (RFID/QR provenance) ============
+model GarmentLifecycleEvent {
+  id        String   @id @default(uuid())
+  garmentId String
+  orderId   String?
+  eventType String // 'received' | 'washed' | 'pressed' | 'packed' | 'delivered' | 'damage_reported'
+  staffId   String?
+  notes     String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([garmentId, createdAt])
+  @@index([orderId, createdAt])
+  @@map("garment_lifecycle_events")
+}
+
+// ============ WHATSAPP / SMS CONVERSATIONS ============
+model WhatsAppConversation {
+  id          String   @id @default(uuid())
+  customerId  String?
+  phoneNumber String
+  direction   String // 'inbound' | 'outbound'
+  message     String
+  aiResponse  Boolean  @default(false)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([phoneNumber, createdAt])
+  @@index([customerId, createdAt])
+  @@map("whatsapp_conversations")
+}
+
+// ============ CHURN SCORES ============
+model ChurnScore {
+  id         String   @id @default(uuid())
+  customerId String   @unique
+  score      Float // 0-1; higher = more likely to churn
+  riskLevel  String // 'low' | 'medium' | 'high'
+  factors    Json // explanation
+  couponSent Boolean  @default(false)
+  couponId   String?
+  computedAt DateTime @default(now())
+
+  @@index([riskLevel, computedAt])
+  @@map("churn_scores")
 }

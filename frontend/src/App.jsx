@@ -23,6 +23,7 @@ import Coupons from './pages/Coupons';
 import GiftCards from './pages/GiftCards';
 import Lockers from './pages/Lockers';
 import AIFeatures from './pages/AIFeatures';
+import AISubscriptionOptimize from './pages/AISubscriptionOptimize';
 import POS from './pages/POS';
 import QualityIssues from './pages/QualityIssues';
 import OrderTracking from './pages/OrderTracking';
@@ -82,6 +83,7 @@ function App() {
           <Route path="lockers" element={<Lockers />} />
           <Route path="quality-issues" element={<QualityIssues />} />
           <Route path="ai" element={<AIFeatures />} />
+          <Route path="ai/subscription-optimize" element={<AISubscriptionOptimize />} />
           <Route path="tracking" element={<OrderTracking />} />
         </Route>
       </Routes>

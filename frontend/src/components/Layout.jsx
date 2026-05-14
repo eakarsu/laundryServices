@@ -131,6 +131,9 @@ function Layout() {
                 <NavLink to="/ai" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
                   <FiCpu /> AI Tools
                 </NavLink>
+                <NavLink to="/ai/subscription-optimize" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+                  <FiCpu /> Subscription Optimizer
+                </NavLink>
               </div>
 
               {isManager() && (

@@ -5,6 +5,146 @@ const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || '');
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+// ── Stripe: Create PaymentIntent ────────────────────────────────────────────
+// POST /api/payments/charge
+// Body: { orderId, amount (in dollars), currency? }
+// Returns: { clientSecret, paymentIntentId }
+router.post('/charge', authenticateToken, async (req, res) => {
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(503).json({ error: 'Stripe is not configured' });
+    }
+
+    const { orderId, amount, currency = 'usd' } = req.body;
+
+    if (!orderId || !amount) {
+      return res.status(400).json({ error: 'orderId and amount are required' });
+    }
+
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { customer: true }
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    // Stripe amounts are in cents (integer)
+    const amountInCents = Math.round(parseFloat(amount) * 100);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountInCents,
+      currency,
+      metadata: {
+        orderId,
+        orderNumber: order.orderNumber,
+        customerId: order.customerId
+      },
+      description: `Laundry Services — Order ${order.orderNumber}`
+    });
+
+    res.json({
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id
+    });
+  } catch (error) {
+    console.error('Stripe charge error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Stripe: Payment Webhook ─────────────────────────────────────────────────
+// POST /api/payments/webhook
+// Stripe sends events here; must use raw body for signature verification.
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+
+  let event;
+  try {
+    if (STRIPE_WEBHOOK_SECRET) {
+      event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+    } else {
+      // No secret configured — parse the raw body directly (dev only)
+      event = JSON.parse(req.body.toString());
+      console.warn('⚠️  STRIPE_WEBHOOK_SECRET not set — skipping signature verification');
+    }
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: `Webhook Error: ${err.message}` });
+  }
+
+  try {
+    switch (event.type) {
+      case 'payment_intent.succeeded': {
+        const intent = event.data.object;
+        const { orderId } = intent.metadata;
+
+        if (orderId) {
+          const amountReceived = intent.amount_received / 100; // convert cents → dollars
+
+          // Record the payment
+          const order = await prisma.order.findUnique({ where: { id: orderId } });
+          if (order) {
+            await prisma.payment.create({
+              data: {
+                orderId,
+                amount: amountReceived,
+                type: 'CREDIT_CARD',
+                status: 'COMPLETED',
+                stripePaymentId: intent.id,
+                reference: intent.id
+              }
+            });
+
+            // Update order paid amount
+            await prisma.order.update({
+              where: { id: orderId },
+              data: {
+                paidAmount: { increment: amountReceived },
+                stripePaymentId: intent.id
+              }
+            });
+
+            console.log(`✅ Payment succeeded for order ${orderId} — amount: $${amountReceived}`);
+          }
+        }
+        break;
+      }
+
+      case 'payment_intent.payment_failed': {
+        const intent = event.data.object;
+        const { orderId } = intent.metadata;
+        if (orderId) {
+          await prisma.payment.create({
+            data: {
+              orderId,
+              amount: intent.amount / 100,
+              type: 'CREDIT_CARD',
+              status: 'FAILED',
+              stripePaymentId: intent.id,
+              reference: intent.last_payment_error?.message || 'Payment failed'
+            }
+          });
+          console.warn(`❌ Payment failed for order ${orderId}`);
+        }
+        break;
+      }
+
+      default:
+        console.log(`Stripe webhook event received: ${event.type}`);
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook handler error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Process payment for order
 router.post('/process', authenticateToken, async (req, res) => {
   try {
