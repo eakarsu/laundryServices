@@ -31,6 +31,7 @@ import DriverDashboard from './pages/DriverDashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import CustomViewsPage from './pages/CustomViewsPage';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -85,6 +86,7 @@ function App() {
           <Route path="ai" element={<AIFeatures />} />
           <Route path="ai/subscription-optimize" element={<AISubscriptionOptimize />} />
           <Route path="tracking" element={<OrderTracking />} />
+          <Route path="custom-views" element={<CustomViewsPage />} />
         </Route>
       </Routes>
       </ErrorBoundary>

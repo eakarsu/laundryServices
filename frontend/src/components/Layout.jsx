@@ -127,6 +127,13 @@ function Layout() {
               </div>
 
               <div className="sidebar-section">
+                <div className="sidebar-section-title">Laundry Views</div>
+                <NavLink to="/custom-views" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+                  <FiGrid /> Laundry Views
+                </NavLink>
+              </div>
+
+              <div className="sidebar-section">
                 <div className="sidebar-section-title">AI Features</div>
                 <NavLink to="/ai" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
                   <FiCpu /> AI Tools

@@ -120,6 +120,7 @@ app.use('/api/alterations', alterationRoutes);
 app.use('/api/quality-issues', qualityIssueRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/driver-mobile', driverMobileRoutes);
+app.use('/api/custom-views', require('./routes/customViews'));
 app.use('/api/garment-damage-vision', require('./routes/garmentDamageVision')); app.use('/api/subscription-optimization', require('./routes/subscriptionOptimization')); app.use('/api/fabric-care', require('./routes/fabricCareAdvisor')); app.use('/api/driver-earnings', require('./routes/driverEarnings')); app.use('/api/corporate-b2b', require('./routes/corporateB2B')); app.use('/api/sustainability', require('./routes/sustainabilityDashboard'));
 
 // ── Haversine formula ────────────────────────────────────────────────────────
