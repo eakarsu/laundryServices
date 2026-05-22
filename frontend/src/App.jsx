@@ -32,6 +32,10 @@ import ErrorBoundary from './components/ErrorBoundary';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import CustomViewsPage from './pages/CustomViewsPage';
+import LintFilterCompliance from './pages/LintFilterCompliance';
+
+import CodexCustomVizFeature from './pages/CodexCustomVizFeature';
+import CodexOperationsFeature from './pages/CodexOperationsFeature';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -52,6 +56,9 @@ function App() {
     <SocketProvider>
       <ErrorBoundary>
       <Routes>
+        <Route path="/codex/custom-viz" element={<CodexCustomVizFeature />} />
+        <Route path="/codex/operations" element={<CodexOperationsFeature />} />
+
         <Route path="/login" element={<Login />} />
         <Route path="/track/:orderNumber" element={<OrderTracking />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -87,6 +94,7 @@ function App() {
           <Route path="ai/subscription-optimize" element={<AISubscriptionOptimize />} />
           <Route path="tracking" element={<OrderTracking />} />
           <Route path="custom-views" element={<CustomViewsPage />} />
+          <Route path="lint-filter-compliance" element={<LintFilterCompliance />} />
         </Route>
       </Routes>
       </ErrorBoundary>

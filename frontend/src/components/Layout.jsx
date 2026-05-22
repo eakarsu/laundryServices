@@ -131,6 +131,9 @@ function Layout() {
                 <NavLink to="/custom-views" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
                   <FiGrid /> Laundry Views
                 </NavLink>
+                <NavLink to="/lint-filter-compliance" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+                  <FiAlertTriangle /> Lint Compliance
+                </NavLink>
               </div>
 
               <div className="sidebar-section">
