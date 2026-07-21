@@ -1,7 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
-const { v4: uuidv4 } = require('uuid');
 const { Parser } = require('json2csv');
 const { sendOrderStatusEmail } = require('../services/emailService');
 const { sendOrderStatusSMS } = require('../services/smsService');

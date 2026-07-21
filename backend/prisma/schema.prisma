@@ -25,6 +25,7 @@ model Customer {
   creditBalance     Decimal     @default(0) @db.Decimal(10, 2)
   loyaltyPoints     Int         @default(0)
   isActive          Boolean     @default(true)
+  authVersion       Int         @default(1)
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -35,6 +36,7 @@ model Customer {
   giftCards      GiftCard[]
   notifications  Notification[]
   qualityIssues  QualityIssue[]
+  damageClaims   DamageClaim[]
 }
 
 enum StarchLevel {
@@ -118,6 +120,7 @@ model Order {
   coupon          Coupon?         @relation(fields: [couponId], references: [id])
   qualityIssues   QualityIssue[]
   trackingHistory OrderTracking[]
+  damageClaims     DamageClaim[]
 }
 
 enum OrderStatus {
@@ -207,6 +210,7 @@ model Driver {
   licenseNumber String?
   vehicleInfo   String?
   isActive      Boolean  @default(true)
+  authVersion   Int      @default(1)
   isAvailable   Boolean  @default(true)
   currentLat    Float?
   currentLng    Float?
@@ -578,6 +582,7 @@ model Staff {
   locationId   String?
   location     Location? @relation(fields: [locationId], references: [id])
   isActive     Boolean   @default(true)
+  authVersion  Int       @default(1)
   lastLogin    DateTime?
   createdAt    DateTime  @default(now())
 }
@@ -585,6 +590,7 @@ model Staff {
 enum StaffRole {
   ADMIN
   MANAGER
+  LEGAL_REVIEWER
   CLERK
   PRESSER
   CLEANER
@@ -840,4 +846,202 @@ model ChurnScore {
 
   @@index([riskLevel, computedAt])
   @@map("churn_scores")
+}
+
+// ============ GOVERNED DAMAGE / LOSS CLAIM WORKFLOW ============
+
+model ClaimTemplate {
+  id            String   @id @default(uuid())
+  authority     String
+  sourceUri     String
+  jurisdiction  String
+  version       String
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  contentHash   String
+  body          String
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  claims DamageClaim[]
+
+  @@unique([authority, jurisdiction, version], map: "claim_templates_authority_jurisdiction_version_key")
+  @@index([jurisdiction, effectiveFrom, effectiveTo], map: "claim_templates_jurisdiction_effective_idx")
+  @@map("claim_templates")
+}
+
+model DamageClaim {
+  id              String      @id @default(uuid())
+  orderId         String
+  order           Order       @relation(fields: [orderId], references: [id], onDelete: Restrict, map: "damage_claims_orderId_fkey")
+  customerId      String
+  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict, map: "damage_claims_customerId_fkey")
+  createdById     String
+  createdByType   String
+  jurisdiction    String
+  incidentDate    DateTime
+  title           String
+  idempotencyKey  String      @unique
+  status          ClaimStatus @default(DRAFT)
+  templateId      String
+  template        ClaimTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, map: "damage_claims_templateId_fkey")
+  templateVersion String
+  version         Int         @default(1)
+  legalHold       Boolean     @default(false)
+  retentionUntil  DateTime
+  storageRef      String?
+  filingRef       String?
+  filingIdempotencyKey String? @unique
+  filedAt         DateTime?
+  closedAt        DateTime?
+  disposedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  access      ClaimAccess[]
+  documents   ClaimDocument[]
+  reviews     ClaimReview[]
+  signatures  ClaimSignature[]
+  audits      ClaimAuditEvent[]
+  exports     ClaimExport[]
+
+  @@index([customerId, createdAt], map: "damage_claims_customer_created_idx")
+  @@index([orderId], map: "damage_claims_order_idx")
+  @@map("damage_claims")
+}
+
+enum ClaimStatus {
+  DRAFT
+  EVIDENCE_PENDING
+  LEGAL_REVIEW
+  APPROVED
+  SIGNATURE_PENDING
+  SIGNER_FAILED
+  SIGNED
+  FILED
+  CLOSED
+  REJECTED
+}
+
+model ClaimAccess {
+  id         String   @id @default(uuid())
+  claimId    String
+  claim      DamageClaim @relation(fields: [claimId], references: [id], onDelete: Cascade, map: "claim_access_claimId_fkey")
+  actorType  String
+  actorId    String
+  permission String
+  grantedBy  String
+  grantedAt  DateTime @default(now())
+  revokedAt  DateTime?
+  reason     String?
+
+  @@unique([claimId, actorType, actorId], map: "claim_access_claim_actor_key")
+  @@index([actorType, actorId, revokedAt], map: "claim_access_actor_revoked_idx")
+  @@map("claim_access")
+}
+
+model ClaimDocument {
+  id          String   @id @default(uuid())
+  claimId     String
+  claim       DamageClaim @relation(fields: [claimId], references: [id], onDelete: Cascade, map: "claim_documents_claimId_fkey")
+  kind        String
+  name        String
+  privileged  Boolean  @default(false)
+  currentVersion Int   @default(1)
+  createdById String
+  createdAt   DateTime @default(now())
+  versions    ClaimDocumentVersion[]
+
+  @@index([claimId, createdAt], map: "claim_documents_claim_created_idx")
+  @@map("claim_documents")
+}
+
+model ClaimDocumentVersion {
+  id              String   @id @default(uuid())
+  documentId      String
+  document        ClaimDocument @relation(fields: [documentId], references: [id], onDelete: Cascade, map: "claim_document_versions_documentId_fkey")
+  version         Int
+  contentHash     String
+  idempotencyKey  String   @unique
+  storageRef      String
+  redactedContentHash String?
+  redactedStorageRef  String?
+  sourceProvider  String
+  sourceReference String
+  ocrProvider     String?
+  ocrReference    String?
+  extractedText   String?
+  createdById     String
+  createdAt       DateTime @default(now())
+
+  @@unique([documentId, version], map: "claim_document_versions_document_version_key")
+  @@unique([documentId, contentHash], map: "claim_document_versions_document_hash_key")
+  @@map("claim_document_versions")
+}
+
+model ClaimReview {
+  id                  String   @id @default(uuid())
+  claimId             String
+  claim               DamageClaim @relation(fields: [claimId], references: [id], onDelete: Cascade, map: "claim_reviews_claimId_fkey")
+  reviewerId          String
+  decision            String
+  jurisdictionChecked Boolean
+  effectiveDateChecked Boolean
+  documentHash        String
+  notes               String
+  createdAt           DateTime @default(now())
+
+  @@index([claimId, createdAt], map: "claim_reviews_claim_created_idx")
+  @@map("claim_reviews")
+}
+
+model ClaimSignature {
+  id             String   @id @default(uuid())
+  claimId        String
+  claim          DamageClaim @relation(fields: [claimId], references: [id], onDelete: Cascade, map: "claim_signatures_claimId_fkey")
+  provider       String
+  providerRef    String?
+  idempotencyKey String   @unique
+  signerEmail    String
+  status         String
+  failureCode    String?
+  signedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([claimId, createdAt], map: "claim_signatures_claim_created_idx")
+  @@map("claim_signatures")
+}
+
+model ClaimAuditEvent {
+  id         String   @id @default(uuid())
+  claimId    String
+  claim      DamageClaim @relation(fields: [claimId], references: [id], onDelete: Restrict, map: "claim_audit_events_claimId_fkey")
+  sequence   Int
+  actorType  String
+  actorId    String
+  action     String
+  payload    Json
+  previousHash String
+  eventHash  String   @unique
+  createdAt  DateTime @default(now())
+
+  @@unique([claimId, sequence], map: "claim_audit_events_claim_sequence_key")
+  @@index([claimId, createdAt], map: "claim_audit_events_claim_created_idx")
+  @@map("claim_audit_events")
+}
+
+model ClaimExport {
+  id          String   @id @default(uuid())
+  claimId     String
+  claim       DamageClaim @relation(fields: [claimId], references: [id], onDelete: Cascade, map: "claim_exports_claimId_fkey")
+  requestedBy String
+  idempotencyKey String   @unique
+  privileged  Boolean
+  manifestHash String
+  storageRef  String
+  createdAt   DateTime @default(now())
+
+  @@index([claimId, createdAt], map: "claim_exports_claim_created_idx")
+  @@map("claim_exports")
 }

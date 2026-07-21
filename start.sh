@@ -1,231 +1,92 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Configuration
-BACKEND_PORT="${BACKEND_PORT:-3001}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-DB_NAME="laundry_services"
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-echo -e "${BLUE}"
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║                                                            ║"
-echo "║         🧺 Laundry Services AI Platform                   ║"
-echo "║                    Startup Script                          ║"
-echo "║                                                            ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-# Navigate to project root
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-# Load environment variables from root .env if exists
-if [ -f ".env" ]; then
-  echo -e "${GREEN}==> Loading environment variables from .env...${NC}"
-  export $(grep -v '^#' .env | xargs)
+if [[ "${NODE_ENV:-development}" == test ]]; then
+  CORS_ORIGINS="http://127.0.0.1:${FRONTEND_PORT:-}"
+  CLAIM_STORAGE_URL=https://storage.runtime.invalid
+  CLAIM_STORAGE_TOKEN=runtime-storage-token-acceptance
+  CLAIM_OCR_URL=https://ocr.runtime.invalid
+  CLAIM_OCR_TOKEN=runtime-ocr-token-acceptance
+  CLAIM_ESIGN_URL=https://esign.runtime.invalid
+  CLAIM_ESIGN_TOKEN=runtime-esign-token-acceptance
+  CLAIM_FILING_URL=https://filing.runtime.invalid
+  CLAIM_FILING_TOKEN=runtime-filing-token-acceptance
+  CLAIM_TEMPLATE_URL=https://templates.runtime.invalid
+  CLAIM_TEMPLATE_TOKEN=runtime-template-token-acceptance
+  VITE_API_PROXY_TARGET="http://127.0.0.1:${BACKEND_PORT:-}"
+  export CORS_ORIGINS CLAIM_STORAGE_URL CLAIM_STORAGE_TOKEN CLAIM_OCR_URL CLAIM_OCR_TOKEN
+  export CLAIM_ESIGN_URL CLAIM_ESIGN_TOKEN CLAIM_FILING_URL CLAIM_FILING_TOKEN CLAIM_TEMPLATE_URL CLAIM_TEMPLATE_TOKEN VITE_API_PROXY_TARGET
+elif [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
 fi
 
-# Set default DATABASE_URL if not provided
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  echo -e "${YELLOW}==> DATABASE_URL not set, using default...${NC}"
-  DB_USER="${USER:-$(whoami)}"
-  export DATABASE_URL="postgresql://${DB_USER}@localhost:5432/${DB_NAME}?schema=public"
-fi
-echo -e "   📊 DATABASE_URL: ${DATABASE_URL}"
-echo ""
-
-# ============ PORT CLEANUP ============
-echo -e "${GREEN}==> Cleaning up processes on ports ${BACKEND_PORT} and ${FRONTEND_PORT}...${NC}"
-for PORT in ${BACKEND_PORT} ${FRONTEND_PORT}; do
-  if lsof -ti tcp:"${PORT}" >/dev/null 2>&1; then
-    echo -e "   ${YELLOW}Found processes on port ${PORT}, killing them...${NC}"
-    lsof -ti tcp:"${PORT}" | xargs kill -9 2>/dev/null || true
-    sleep 1
-  fi
+for port_name in BACKEND_PORT FRONTEND_PORT; do
+  value="${!port_name:-}"
+  [[ "$value" =~ ^[0-9]+$ ]] && (( value >= 1024 && value <= 65535 )) || { echo "$port_name must be an explicit integer between 1024 and 65535" >&2; exit 1; }
 done
-echo -e "   ${GREEN}✅ Ports are clear${NC}"
-echo ""
+[[ "$BACKEND_PORT" != "$FRONTEND_PORT" ]] || { echo "BACKEND_PORT and FRONTEND_PORT must be different" >&2; exit 1; }
+PORT="$BACKEND_PORT"
+BACKEND_HOST=127.0.0.1
+export PORT BACKEND_HOST
+for assigned_port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+  lsof -nP -iTCP:"$assigned_port" -sTCP:LISTEN >/dev/null 2>&1 && { echo "Assigned port $assigned_port is occupied" >&2; exit 1; }
+done
 
-# ============ POSTGRESQL CHECK ============
-echo -e "${GREEN}==> Checking PostgreSQL status...${NC}"
-if ! command -v psql &> /dev/null; then
-  echo -e "${YELLOW}   ⚠️  psql command not found. Assuming PostgreSQL is configured correctly.${NC}"
-else
-  # Try to connect to PostgreSQL server
-  if ! psql -h localhost -c "SELECT 1;" postgres >/dev/null 2>&1 && \
-     ! psql -c "SELECT 1;" postgres >/dev/null 2>&1; then
-    echo ""
-    echo -e "${RED}❌ ERROR: Cannot connect to PostgreSQL server.${NC}"
-    echo ""
-    echo "Please start PostgreSQL:"
-    echo "  macOS:  brew services start postgresql"
-    echo "  Linux:  sudo systemctl start postgresql"
-    echo ""
-    exit 1
-  fi
-  echo -e "   ${GREEN}✅ PostgreSQL server is running${NC}"
+: "${DATABASE_URL:?DATABASE_URL is required}"
+: "${JWT_SECRET:?JWT_SECRET is required}"
+: "${CLAIM_STORAGE_URL:?CLAIM_STORAGE_URL is required}"
+: "${CLAIM_STORAGE_TOKEN:?CLAIM_STORAGE_TOKEN is required}"
+: "${CLAIM_OCR_URL:?CLAIM_OCR_URL is required}"
+: "${CLAIM_OCR_TOKEN:?CLAIM_OCR_TOKEN is required}"
+: "${CLAIM_ESIGN_URL:?CLAIM_ESIGN_URL is required}"
+: "${CLAIM_ESIGN_TOKEN:?CLAIM_ESIGN_TOKEN is required}"
+: "${CLAIM_FILING_URL:?CLAIM_FILING_URL is required}"
+: "${CLAIM_FILING_TOKEN:?CLAIM_FILING_TOKEN is required}"
+: "${CLAIM_TEMPLATE_URL:?CLAIM_TEMPLATE_URL is required}"
+: "${CLAIM_TEMPLATE_TOKEN:?CLAIM_TEMPLATE_TOKEN is required}"
 
-  # Create database if it doesn't exist
-  echo ""
-  echo -e "${GREEN}==> Ensuring database '${DB_NAME}' exists...${NC}"
-  if ! psql -h localhost -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "${DB_NAME}" && \
-     ! psql -lqt 2>/dev/null | cut -d \| -f 1 | grep -qw "${DB_NAME}"; then
-    echo -e "   ${YELLOW}Creating database '${DB_NAME}'...${NC}"
-    createdb "${DB_NAME}" 2>/dev/null || createdb -h localhost "${DB_NAME}" 2>/dev/null || {
-      echo -e "${RED}Could not create database automatically.${NC}"
-      echo "Please create it manually: createdb ${DB_NAME}"
-      exit 1
-    }
-    echo -e "   ${GREEN}✅ Database created successfully!${NC}"
-  else
-    echo -e "   ${GREEN}✅ Database '${DB_NAME}' already exists${NC}"
-  fi
+if [[ ! -d backend/node_modules ]]; then
+  echo "backend dependencies are missing; run: npm --prefix backend ci" >&2
+  exit 1
 fi
-echo ""
-
-# ============ BACKEND SETUP ============
-echo -e "${GREEN}==> Setting up backend...${NC}"
-cd "$PROJECT_ROOT/backend"
-
-# Install backend dependencies
-if [ ! -d "node_modules" ] || [ ! -f "node_modules/.package-lock.json" ]; then
-  echo -e "   📦 Installing backend dependencies..."
-  npm install
-else
-  echo -e "   ${GREEN}✅ Backend dependencies already installed${NC}"
+if [[ "${START_FRONTEND:-true}" == "true" && ! -d frontend/node_modules ]]; then
+  echo "frontend dependencies are missing; run: npm --prefix frontend ci" >&2
+  exit 1
 fi
 
-# Create/Update backend .env file
-echo -e "   📝 Updating backend .env file..."
-cat > .env << EOF
-DATABASE_URL="${DATABASE_URL}"
-JWT_SECRET="${JWT_SECRET:-laundry-services-jwt-secret-change-in-production-2024}"
-PORT=${BACKEND_PORT}
-OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-your-openrouter-api-key}"
-OPENROUTER_MODEL="${OPENROUTER_MODEL:-anthropic/claude-3-haiku}"
-NODE_ENV=development
-EOF
-echo -e "   ${GREEN}✅ Backend .env updated${NC}"
+# Startup is intentionally read-only. Operators run `npm --prefix backend run migrate`
+# as a separate deployment step after taking a backup.
+if [[ "${NODE_ENV:-development}" != test ]]; then npm --prefix backend run migrate:status; fi
 
-# Generate Prisma client
-echo -e "   🔧 Generating Prisma client..."
-npx prisma generate
-
-# Run database migrations
-echo -e "   📊 Running Prisma migrations..."
-npx prisma db push 2>/dev/null || {
-  echo -e "   ${YELLOW}Migration failed. Trying to create initial schema...${NC}"
-  npx prisma db push --force-reset
-}
-
-# Check if database needs seeding
-echo ""
-echo -e "${GREEN}==> Checking if database needs seeding...${NC}"
-CUSTOMER_COUNT=$(psql "${DATABASE_URL}" -t -c "SELECT COUNT(*) FROM \"Customer\";" 2>/dev/null | tr -d ' ' || echo "0")
-if [ "${CUSTOMER_COUNT}" = "0" ] || [ -z "${CUSTOMER_COUNT}" ]; then
-  echo -e "   ${YELLOW}Database appears empty. Running comprehensive seed...${NC}"
-  npx prisma db push --force-reset --accept-data-loss
-  npm run seed
-else
-  echo -e "   ${GREEN}✅ Database already contains data (${CUSTOMER_COUNT} customers)${NC}"
-  echo -e "   ${YELLOW}   Tip: To reseed, run: cd backend && npm run seed${NC}"
-fi
-echo ""
-
-# ============ FRONTEND SETUP ============
-echo -e "${GREEN}==> Setting up frontend...${NC}"
-cd "$PROJECT_ROOT/frontend"
-
-# Install frontend dependencies
-if [ ! -d "node_modules" ] || [ ! -f "node_modules/.package-lock.json" ]; then
-  echo -e "   📦 Installing frontend dependencies..."
-  npm install
-else
-  echo -e "   ${GREEN}✅ Frontend dependencies already installed${NC}"
-fi
-echo ""
-
-# ============ CLEANUP FUNCTION ============
+backend_pid=''
+frontend_pid=''
 cleanup() {
-  echo ""
-  echo -e "${YELLOW}==> Shutting down servers...${NC}"
-  kill $BACKEND_PID 2>/dev/null || true
-  kill $FRONTEND_PID 2>/dev/null || true
-  echo -e "${GREEN}✅ Servers stopped. Goodbye!${NC}"
-  exit 0
+  [[ -n "$backend_pid" ]] && kill "$backend_pid" 2>/dev/null || true
+  [[ -n "$frontend_pid" ]] && kill "$frontend_pid" 2>/dev/null || true
+  wait "$backend_pid" "$frontend_pid" 2>/dev/null || true
 }
+trap cleanup EXIT INT TERM
 
-trap cleanup SIGINT SIGTERM
+npm --prefix backend start &
+backend_pid=$!
 
-# ============ START SERVERS ============
-echo -e "${BLUE}"
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║         🚀 Starting Laundry Services AI Platform          ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
+attempt=0
+while ! lsof -nP -iTCP:"$BACKEND_PORT" -sTCP:LISTEN >/dev/null 2>&1; do
+  kill -0 "$backend_pid" 2>/dev/null || { echo "Backend exited before binding $BACKEND_PORT" >&2; wait "$backend_pid"; exit 1; }
+  (( attempt < 120 )) || { echo "Backend did not bind $BACKEND_PORT within 30 seconds" >&2; exit 1; }
+  sleep 0.25
+  attempt=$((attempt + 1))
+done
 
-# Start backend server
-echo -e "${GREEN}==> Starting backend server on port ${BACKEND_PORT}...${NC}"
-cd "$PROJECT_ROOT/backend"
-npm run dev &
-BACKEND_PID=$!
+if [[ "${START_FRONTEND:-true}" == "true" ]]; then
+  npm --prefix frontend run dev -- --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort &
+  frontend_pid=$!
+fi
 
-# Wait for backend to start
-sleep 3
-
-# Start frontend server
-echo -e "${GREEN}==> Starting frontend server on port ${FRONTEND_PORT}...${NC}"
-cd "$PROJECT_ROOT/frontend"
-npm run dev &
-FRONTEND_PID=$!
-
-# Wait for frontend to start
-sleep 3
-
-echo ""
-echo -e "${GREEN}"
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║                                                            ║"
-echo "║         ✅ Application is running!                         ║"
-echo "║                                                            ║"
-echo "╠════════════════════════════════════════════════════════════╣"
-echo "║                                                            ║"
-echo "║   🌐 Frontend:  http://localhost:${FRONTEND_PORT}                    ║"
-echo "║   🔌 Backend:   http://localhost:${BACKEND_PORT}                     ║"
-echo "║   📡 WebSocket: ws://localhost:${BACKEND_PORT}                       ║"
-echo "║                                                            ║"
-echo "╠════════════════════════════════════════════════════════════╣"
-echo "║                                                            ║"
-echo "║   🔑 Quick Login Credentials (password: password123)       ║"
-echo "║   ─────────────────────────────────────────────────────    ║"
-echo "║   👑 Admin:    admin@laundry.com                          ║"
-echo "║   📊 Manager:  manager@laundry.com                        ║"
-echo "║   🚚 Driver:   driver1@laundry.com                        ║"
-echo "║   👤 Customer: john.smith@email.com                       ║"
-echo "║                                                            ║"
-echo "╠════════════════════════════════════════════════════════════╣"
-echo "║                                                            ║"
-echo "║   📝 Features:                                             ║"
-echo "║   • Real-time order tracking (WebSocket)                   ║"
-echo "║   • Route optimization for drivers                         ║"
-echo "║   • AI demand forecasting                                  ║"
-echo "║   • Quality issue reporting                                ║"
-echo "║   • Driver mobile dashboard                                ║"
-echo "║   • Subscription management                                ║"
-echo "║                                                            ║"
-echo "╠════════════════════════════════════════════════════════════╣"
-echo "║                                                            ║"
-echo "║   Press Ctrl+C to stop the servers                         ║"
-echo "║                                                            ║"
-echo "╚════════════════════════════════════════════════════════════╝"
-echo -e "${NC}"
-
-# Wait for both processes
-wait $BACKEND_PID $FRONTEND_PID
+wait "$backend_pid"

@@ -1,12 +1,15 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, signToken } = require('../middleware/auth');
 const crypto = require('crypto');
 
 const router = express.Router();
 const prisma = new PrismaClient();
+const internalError = (res, error) => {
+  console.error('authentication route failed', error.message);
+  return res.status(500).json({ error: 'INTERNAL_ERROR' });
+};
 
 // Password strength validation
 const validatePassword = (password) => {
@@ -40,11 +43,7 @@ router.post('/register', async (req, res) => {
       data: { email, passwordHash, firstName, lastName, phone, emailVerified: false, verificationToken }
     });
 
-    const token = jwt.sign(
-      { id: customer.id, email: customer.email, type: 'customer' },
-      process.env.JWT_SECRET || 'secret',
-      { expiresIn: '7d' }
-    );
+    const token = signToken({ id: customer.id, email: customer.email, type: 'customer', ver: customer.authVersion }, '12h');
 
     res.status(201).json({
       token,
@@ -57,7 +56,7 @@ router.post('/register', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -67,7 +66,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     const customer = await prisma.customer.findUnique({ where: { email } });
-    if (!customer) {
+    if (!customer || !customer.isActive) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -76,11 +75,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: customer.id, email: customer.email, type: 'customer' },
-      process.env.JWT_SECRET || 'secret',
-      { expiresIn: '7d' }
-    );
+    const token = signToken({ id: customer.id, email: customer.email, type: 'customer', ver: customer.authVersion }, '12h');
 
     res.json({
       token,
@@ -93,7 +88,7 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -106,7 +101,7 @@ router.post('/staff/login', async (req, res) => {
       where: { email },
       include: { location: true }
     });
-    if (!staff) {
+    if (!staff || !staff.isActive) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -120,11 +115,7 @@ router.post('/staff/login', async (req, res) => {
       data: { lastLogin: new Date() }
     });
 
-    const token = jwt.sign(
-      { id: staff.id, email: staff.email, role: staff.role, type: 'staff' },
-      process.env.JWT_SECRET || 'secret',
-      { expiresIn: '12h' }
-    );
+    const token = signToken({ id: staff.id, email: staff.email, role: staff.role, type: 'staff', ver: staff.authVersion }, '12h');
 
     res.json({
       token,
@@ -139,7 +130,7 @@ router.post('/staff/login', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -149,7 +140,7 @@ router.post('/driver/login', async (req, res) => {
     const { email, password } = req.body;
 
     const driver = await prisma.driver.findUnique({ where: { email } });
-    if (!driver) {
+    if (!driver || !driver.isActive) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -158,11 +149,7 @@ router.post('/driver/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: driver.id, email: driver.email, type: 'driver' },
-      process.env.JWT_SECRET || 'secret',
-      { expiresIn: '12h' }
-    );
+    const token = signToken({ id: driver.id, email: driver.email, type: 'driver', ver: driver.authVersion }, '12h');
 
     res.json({
       token,
@@ -175,7 +162,7 @@ router.post('/driver/login', async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -206,7 +193,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const { passwordHash, ...userData } = user;
     res.json({ ...userData, type: req.user.type });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -239,23 +226,23 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     if (req.user.type === 'customer') {
       await prisma.customer.update({
         where: { id: req.user.id },
-        data: { passwordHash: newPasswordHash }
+        data: { passwordHash: newPasswordHash, authVersion: { increment: 1 } }
       });
     } else if (req.user.type === 'staff') {
       await prisma.staff.update({
         where: { id: req.user.id },
-        data: { passwordHash: newPasswordHash }
+        data: { passwordHash: newPasswordHash, authVersion: { increment: 1 } }
       });
     } else if (req.user.type === 'driver') {
       await prisma.driver.update({
         where: { id: req.user.id },
-        data: { passwordHash: newPasswordHash }
+        data: { passwordHash: newPasswordHash, authVersion: { increment: 1 } }
       });
     }
 
-    res.json({ message: 'Password changed successfully' });
+    res.json({ message: 'Password changed successfully; sign in again' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -264,7 +251,7 @@ router.post('/logout', authenticateToken, async (req, res) => {
   try {
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -295,7 +282,7 @@ router.post('/forgot-password', async (req, res) => {
     // In production, send email here
     res.json({ message: 'If an account exists with this email, a reset link has been sent' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -333,7 +320,7 @@ router.post('/reset-password', async (req, res) => {
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -361,7 +348,7 @@ router.post('/verify-email', async (req, res) => {
 
     res.json({ message: 'Email verified successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
 
@@ -388,8 +375,10 @@ router.post('/resend-verification', authenticateToken, async (req, res) => {
     // In production, send verification email here
     res.json({ message: 'Verification email sent' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    internalError(res, error);
   }
 });
+
+router.close = () => prisma.$disconnect();
 
 module.exports = router;

@@ -1,12 +1,14 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
-const { Server } = require('socket.io');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 const { PrismaClient } = require('@prisma/client');
-const jwt = require('jsonwebtoken');
-const { getJwtSecret } = require('./middleware/auth');
+const { disconnectAuthPrisma, getJwtSecret, resolveIdentity, verifyToken } = require('./middleware/auth');
+
+// Authentication never falls back to a built-in key, including in development.
+getJwtSecret();
 
 // Env-driven CORS allowlist. CORS_ORIGINS is comma-separated, e.g.
 // CORS_ORIGINS=https://app.example.com,https://staging.example.com
@@ -14,63 +16,47 @@ const { getJwtSecret } = require('./middleware/auth');
 const corsOriginsEnv =
   process.env.CORS_ORIGINS ||
   'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173';
+if (process.env.NODE_ENV === 'production' && !process.env.CORS_ORIGINS) {
+  throw new Error('CORS_ORIGINS is required in production');
+}
 const allowedOrigins = corsOriginsEnv.split(',').map((s) => s.trim()).filter(Boolean);
+if (!allowedOrigins.length || allowedOrigins.includes('*')) {
+  throw new Error('CORS_ORIGINS must contain explicit origins; wildcard CORS is not allowed');
+}
+const legacyFeaturesEnabled = process.env.NODE_ENV !== 'production' && process.env.ENABLE_LEGACY_ROUTES === 'true';
 const corsOptions = {
   origin: (origin, cb) => {
     // Allow requests with no Origin (curl, mobile apps).
     if (!origin) return cb(null, true);
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    if (allowedOrigins.includes(origin)) {
       return cb(null, true);
     }
-    return cb(new Error(`CORS: origin ${origin} not allowed`));
+    const error = new Error(`CORS: origin ${origin} not allowed`);
+    error.status = 403;
+    return cb(error);
   },
   credentials: true,
 };
 
 const authRoutes = require('./routes/auth');
-const customerRoutes = require('./routes/customers');
-const orderRoutes = require('./routes/orders');
-const serviceRoutes = require('./routes/services');
-const garmentRoutes = require('./routes/garments');
-const driverRoutes = require('./routes/drivers');
-const routeRoutes = require('./routes/routes');
-const pricingRoutes = require('./routes/pricing');
-const machineRoutes = require('./routes/machines');
-const locationRoutes = require('./routes/locations');
-const paymentRoutes = require('./routes/payments');
-const reportRoutes = require('./routes/reports');
-const aiRoutes = require('./routes/ai');
-const subscriptionRoutes = require('./routes/subscriptions');
-const couponRoutes = require('./routes/coupons');
-const giftCardRoutes = require('./routes/giftCards');
-const notificationRoutes = require('./routes/notifications');
-const staffRoutes = require('./routes/staff');
-const lockerRoutes = require('./routes/lockers');
-const alterationRoutes = require('./routes/alterations');
-const qualityIssueRoutes = require('./routes/qualityIssues');
-const trackingRoutes = require('./routes/tracking');
-const driverMobileRoutes = require('./routes/driverMobile');
+const damageClaimRoutes = require('./routes/damageClaims');
 
 const prisma = new PrismaClient();
 const app = express();
 const server = http.createServer(app);
 
 // Socket.IO setup for real-time features (uses same allowlist as Express CORS)
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins.includes('*') ? '*' : allowedOrigins,
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
-});
+const io = legacyFeaturesEnabled ? new (require('socket.io').Server)(server, {
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true }
+}) : null;
 
 // Make io accessible to routes
 app.set('io', io);
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '8mb' }));
 // Twilio inbound webhooks deliver application/x-www-form-urlencoded.
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // Security headers
 app.use(helmet());
@@ -92,37 +78,54 @@ app.use('/api', globalLimiter);
 app.use('/api/auth', authLimiter);
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), websocket: true });
+app.get('/api/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ status: 'ready', timestamp: new Date().toISOString(), governedClaims: true, legacyFeaturesEnabled });
+  } catch (_error) {
+    res.status(503).json({ status: 'not_ready', governedClaims: true });
+  }
 });
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/customers', customerRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/services', serviceRoutes);
-app.use('/api/garments', garmentRoutes);
-app.use('/api/drivers', driverRoutes);
-app.use('/api/routes', routeRoutes);
-app.use('/api/pricing', pricingRoutes);
-app.use('/api/machines', machineRoutes);
-app.use('/api/locations', locationRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/subscriptions', subscriptionRoutes);
-app.use('/api/coupons', couponRoutes);
-app.use('/api/gift-cards', giftCardRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/staff', staffRoutes);
-app.use('/api/lockers', lockerRoutes);
-app.use('/api/alterations', alterationRoutes);
-app.use('/api/quality-issues', qualityIssueRoutes);
-app.use('/api/tracking', trackingRoutes);
-app.use('/api/driver-mobile', driverMobileRoutes);
-app.use('/api/custom-views', require('./routes/customViews'));
-app.use('/api/lint-filter-compliance', require('./routes/lintFilterCompliance'));
-app.use('/api/garment-damage-vision', require('./routes/garmentDamageVision')); app.use('/api/subscription-optimization', require('./routes/subscriptionOptimization')); app.use('/api/fabric-care', require('./routes/fabricCareAdvisor')); app.use('/api/driver-earnings', require('./routes/driverEarnings')); app.use('/api/corporate-b2b', require('./routes/corporateB2B')); app.use('/api/sustainability', require('./routes/sustainabilityDashboard'));
+const governedAuthRoutes = new Set(['POST /staff/login', 'POST /login', 'GET /me', 'POST /change-password', 'POST /logout']);
+app.use('/api/auth', (req, res, next) => {
+  if (legacyFeaturesEnabled || governedAuthRoutes.has(`${req.method} ${req.path}`)) return next();
+  return res.status(404).json({ error: 'NOT_FOUND' });
+}, authRoutes);
+app.use('/api/damage-claims', damageClaimRoutes);
+if (legacyFeaturesEnabled) {
+  app.use('/api/customers', require('./routes/customers'));
+  app.use('/api/orders', require('./routes/orders'));
+  app.use('/api/services', require('./routes/services'));
+  app.use('/api/garments', require('./routes/garments'));
+  app.use('/api/drivers', require('./routes/drivers'));
+  app.use('/api/routes', require('./routes/routes'));
+  app.use('/api/pricing', require('./routes/pricing'));
+  app.use('/api/machines', require('./routes/machines'));
+  app.use('/api/locations', require('./routes/locations'));
+  app.use('/api/payments', require('./routes/payments'));
+  app.use('/api/reports', require('./routes/reports'));
+  app.use('/api/ai', require('./routes/ai'));
+  app.use('/api/subscriptions', require('./routes/subscriptions'));
+  app.use('/api/coupons', require('./routes/coupons'));
+  app.use('/api/gift-cards', require('./routes/giftCards'));
+  app.use('/api/notifications', require('./routes/notifications'));
+  app.use('/api/staff', require('./routes/staff'));
+  app.use('/api/lockers', require('./routes/lockers'));
+  app.use('/api/alterations', require('./routes/alterations'));
+  app.use('/api/quality-issues', require('./routes/qualityIssues'));
+  app.use('/api/tracking', require('./routes/tracking'));
+  app.use('/api/driver-mobile', require('./routes/driverMobile'));
+  app.use('/api/custom-views', require('./routes/customViews'));
+  app.use('/api/lint-filter-compliance', require('./routes/lintFilterCompliance'));
+  app.use('/api/garment-damage-vision', require('./routes/garmentDamageVision'));
+  app.use('/api/subscription-optimization', require('./routes/subscriptionOptimization'));
+  app.use('/api/fabric-care', require('./routes/fabricCareAdvisor'));
+  app.use('/api/driver-earnings', require('./routes/driverEarnings'));
+  app.use('/api/corporate-b2b', require('./routes/corporateB2B'));
+  app.use('/api/sustainability', require('./routes/sustainabilityDashboard'));
+}
 
 // ── Haversine formula ────────────────────────────────────────────────────────
 // Returns distance in meters between two lat/lng coordinates.
@@ -141,7 +144,7 @@ const haversineDistance = (lat1, lng1, lat2, lng2) => {
 const ARRIVAL_THRESHOLD_METERS = 200;
 
 // ── Socket.IO JWT middleware ─────────────────────────────────────────────────
-io.use((socket, next) => {
+if (legacyFeaturesEnabled) io.use(async (socket, next) => {
   // Allow unauthenticated connections from the browser tracking UI;
   // only enforce JWT for driver-originated events (checked per-event below).
   // If a token is present, verify it and attach to the socket.
@@ -151,8 +154,7 @@ io.use((socket, next) => {
 
   if (token) {
     try {
-      const decoded = jwt.verify(token, getJwtSecret());
-      socket.user = decoded;
+      socket.user = await resolveIdentity(verifyToken(token));
     } catch (err) {
       // Invalid token — connection still allowed for read-only tracking,
       // but driver:location updates will be rejected if no valid user is set.
@@ -166,7 +168,7 @@ io.use((socket, next) => {
 });
 
 // WebSocket connection handling
-io.on('connection', (socket) => {
+if (legacyFeaturesEnabled) io.on('connection', (socket) => {
   console.log(`🔌 Client connected: ${socket.id} user=${socket.user?.id || 'anonymous'}`);
 
   // Join room for order tracking
@@ -370,55 +372,65 @@ io.on('connection', (socket) => {
 
 // Helper function to emit order updates (can be called from routes)
 app.emitOrderUpdate = (orderId, data) => {
-  io.to(`order:${orderId}`).emit('order:update', data);
+  io?.to(`order:${orderId}`).emit('order:update', data);
 };
 
 app.emitDriverUpdate = (driverId, data) => {
-  io.to(`driver:${driverId}`).emit('driver:update', data);
+  io?.to(`driver:${driverId}`).emit('driver:update', data);
 };
 
 app.emitRouteUpdate = (routeId, data) => {
-  io.to(`route:${routeId}`).emit('route:update', data);
+  io?.to(`route:${routeId}`).emit('route:update', data);
 };
 
 // Global broadcast for dashboard updates
 app.emitDashboardUpdate = (data) => {
-  io.emit('dashboard:update', data);
+  io?.emit('dashboard:update', data);
 };
+
+app.use('/api', (_req, res) => res.status(404).json({ error: 'NOT_FOUND' }));
+
+if (process.env.STATIC_DIR) {
+  const staticDirectory = path.resolve(process.env.STATIC_DIR);
+  app.use(express.static(staticDirectory, { index: false, maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }));
+  app.get(/^\/(?!api(?:\/|$)).*/, (_req, res) => res.sendFile(path.join(staticDirectory, 'index.html')));
+}
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!', message: err.message });
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
+  if (status >= 500) console.error(err.stack);
+  res.status(status).json({ error: status === 403 ? 'ORIGIN_FORBIDDEN' : 'INTERNAL_ERROR', message: 'Request failed' });
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT);
+const BACKEND_HOST = process.env.BACKEND_HOST;
+if (!Number.isInteger(PORT) || PORT < 1024 || PORT > 65535 || BACKEND_HOST !== '127.0.0.1') {
+  throw new Error('PORT and BACKEND_HOST=127.0.0.1 must be explicitly assigned');
+}
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔌 WebSocket server ready`);
-});
+function start() {
+  return server.listen(PORT, BACKEND_HOST, () => {
+    console.log(`Laundry claims API listening on http://${BACKEND_HOST}:${PORT}`);
+    console.log(`Legacy routes enabled: ${legacyFeaturesEnabled}`);
+  });
+}
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Shutting down gracefully...');
-  await prisma.$disconnect();
-  server.close();
-  process.exit(0);
-});
+if (require.main === module) start();
 
-module.exports = { app, prisma, io };
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`Shutting down after ${signal}`);
+  await Promise.allSettled([
+    prisma.$disconnect(), authRoutes.close(), damageClaimRoutes.close(), disconnectAuthPrisma(),
+  ]);
+  server.close(() => process.exit(0));
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+module.exports = { app, prisma, io, server, start };
 
 // === Batch 10 Gaps & Frontend Mounts === (mounts)
-app.use('/api/gap-no-automated-damage-loss-claim-adjudication', require('./routes/gap_no_automated_damage_loss_claim_adjudication'));
-app.use('/api/gap-no-fabric-care-compliance-ai-per', require('./routes/gap_no_fabric_care_compliance_ai_per'));
-app.use('/api/gap-no-subscription-personalization-preferences-schedule-auto', require('./routes/gap_no_subscription_personalization_preferences_schedule_auto'));
-app.use('/api/gap-no-environmental-sustainability-tracking-ai', require('./routes/gap_no_environmental_sustainability_tracking_ai'));
-app.use('/api/gap-no-b2b-corporate-account-agent', require('./routes/gap_no_b2b_corporate_account_agent'));
-app.use('/api/gap-no-driver-earnings-optimization-ai', require('./routes/gap_no_driver_earnings_optimization_ai'));
-app.use('/api/gap-no-laundromat-partner-network-management', require('./routes/gap_no_laundromat_partner_network_management'));
-app.use('/api/gap-no-corporate-b2b-bulk-order-portal', require('./routes/gap_no_corporate_b2b_bulk_order_portal'));
-app.use('/api/gap-no-environmental-dashboard-water-chemical-usage', require('./routes/gap_no_environmental_dashboard_water_chemical_usage'));
-app.use('/api/gap-no-equipment-supplier-marketplace', require('./routes/gap_no_equipment_supplier_marketplace'));
-app.use('/api/gap-no-referral-program-engine', require('./routes/gap_no_referral_program_engine'));
-app.use('/api/gap-no-insurance-guarantee-policies-module', require('./routes/gap_no_insurance_guarantee_policies_module'));

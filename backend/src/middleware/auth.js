@@ -1,22 +1,53 @@
 const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
 
-// Fail-fast: don't silently fall back to 'secret' in production.
+const prisma = new PrismaClient();
+
 function getJwtSecret() {
   const s = process.env.JWT_SECRET;
-  if (!s) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('JWT_SECRET environment variable must be set in production');
-    }
-    if (!global.__jwtSecretWarned) {
-      console.warn('⚠️  JWT_SECRET not set — using insecure default "secret" for development only');
-      global.__jwtSecretWarned = true;
-    }
-    return 'secret';
+  if (!s || s.length < 32 || ['secret', 'changeme'].includes(s.toLowerCase())) {
+    throw new Error('JWT_SECRET must be set to at least 32 non-default characters');
   }
   return s;
 }
 
-const authenticateToken = (req, res, next) => {
+function jwtOptions() {
+  return {
+    algorithms: ['HS256'],
+    issuer: process.env.JWT_ISSUER || 'laundry-services',
+    audience: process.env.JWT_AUDIENCE || 'laundry-services-api',
+  };
+}
+
+function signToken(payload, expiresIn) {
+  const options = jwtOptions();
+  return jwt.sign(payload, getJwtSecret(), {
+    algorithm: 'HS256',
+    issuer: options.issuer,
+    audience: options.audience,
+    expiresIn,
+  });
+}
+
+function verifyToken(token) {
+  return jwt.verify(token, getJwtSecret(), jwtOptions());
+}
+
+async function resolveIdentity(claims) {
+  if (!claims?.id || !claims?.type || !Number.isInteger(claims.ver)) return null;
+  let user;
+  if (claims.type === 'customer') {
+    user = await prisma.customer.findUnique({ where: { id: claims.id }, select: { id: true, email: true, isActive: true, authVersion: true } });
+  } else if (claims.type === 'staff') {
+    user = await prisma.staff.findUnique({ where: { id: claims.id }, select: { id: true, email: true, role: true, isActive: true, authVersion: true } });
+  } else if (claims.type === 'driver') {
+    user = await prisma.driver.findUnique({ where: { id: claims.id }, select: { id: true, email: true, isActive: true, authVersion: true } });
+  }
+  if (!user?.isActive || user.authVersion !== claims.ver) return null;
+  return { id: user.id, email: user.email, role: user.role, type: claims.type, ver: user.authVersion };
+}
+
+const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -24,13 +55,15 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, getJwtSecret(), (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
+  try {
+    const claims = verifyToken(token);
+    const user = await resolveIdentity(claims);
+    if (!user) return res.status(401).json({ error: 'Session has been revoked' });
     req.user = user;
-    next();
-  });
+    return next();
+  } catch (_error) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
 };
 
 const authorizeRoles = (...roles) => {
@@ -42,18 +75,21 @@ const authorizeRoles = (...roles) => {
   };
 };
 
-const optionalAuth = (req, res, next) => {
+const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token) {
-    jwt.verify(token, getJwtSecret(), (err, user) => {
-      if (!err) {
-        req.user = user;
-      }
-    });
+    try {
+      const user = await resolveIdentity(verifyToken(token));
+      if (user) req.user = user;
+    } catch (_error) {
+      // Optional authentication deliberately continues without an identity.
+    }
   }
-  next();
+  return next();
 };
 
-module.exports = { authenticateToken, authorizeRoles, optionalAuth, getJwtSecret };
+const disconnectAuthPrisma = () => prisma.$disconnect();
+
+module.exports = { authenticateToken, authorizeRoles, optionalAuth, getJwtSecret, jwtOptions, resolveIdentity, signToken, verifyToken, disconnectAuthPrisma };

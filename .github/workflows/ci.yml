@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: laundry_claims_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d laundry_claims_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/laundry_claims_ci?schema=public
+      JWT_ISSUER: laundry-e2e
+      JWT_AUDIENCE: laundry-e2e-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Generate ephemeral test secret
+        run: echo "JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Install backend
+        run: npm --prefix backend ci
+      - name: Validate and replay migrations
+        run: |
+          npm --prefix backend run prisma:generate
+          npm --prefix backend run migrate
+          npm --prefix backend run migrate
+          createdb -h 127.0.0.1 -U postgres laundry_claims_shadow
+          backend/node_modules/.bin/prisma migrate diff \
+            --from-migrations backend/prisma/migrations \
+            --to-schema-datamodel backend/prisma/schema.prisma \
+            --shadow-database-url=postgresql://postgres:postgres@127.0.0.1:5432/laundry_claims_shadow?schema=public \
+            --exit-code
+        env:
+          PGPASSWORD: postgres
+      - name: Backend checks and tests
+        run: |
+          npm --prefix backend run check
+          npm --prefix backend test
+          npm --prefix backend audit --audit-level=low
+      - name: Frontend checks
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend audit --audit-level=low
+          npm --prefix frontend run build
+      - name: Shell and Compose syntax
+        run: |
+          bash -n start.sh ops/backup.sh ops/restore.sh
+          POSTGRES_PASSWORD=test-password JWT_SECRET=test-secret-that-is-longer-than-thirty-two CORS_ORIGINS=https://claims.example.test \
+          CLAIM_STORAGE_URL=https://storage.example.test CLAIM_STORAGE_TOKEN=test-storage-token \
+          CLAIM_OCR_URL=https://ocr.example.test CLAIM_OCR_TOKEN=test-ocr-token \
+          CLAIM_ESIGN_URL=https://esign.example.test CLAIM_ESIGN_TOKEN=test-esign-token \
+          CLAIM_FILING_URL=https://filing.example.test CLAIM_FILING_TOKEN=test-filing-token \
+          CLAIM_TEMPLATE_URL=https://templates.example.test CLAIM_TEMPLATE_TOKEN=test-template-token \
+          docker compose config --quiet
+      - name: Build container
+        run: docker build --tag laundry-claims:ci .
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2

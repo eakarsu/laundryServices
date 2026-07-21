@@ -1,39 +1,42 @@
 {
   "name": "laundry-services-backend",
   "version": "1.0.0",
-  "description": "Laundry Services AI Platform Backend",
+  "description": "Governed laundry damage and loss claim workflow",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "seed": "node prisma/seed.js",
+    "migrate": "prisma migrate deploy",
+    "migrate:status": "prisma migrate status",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "node prisma/seed.js"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
+    "audit:verify": "node scripts/verify-audit.js",
+    "demo:seed": "node prisma/seed.js",
+    "create-admin": "node scripts/create-admin.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "test:unit": "node --test test/unit.test.js",
+    "test:e2e": "node --test --test-concurrency=1 test/claims.e2e.test.js",
+    "check": "node --check src/index.js && node --check src/middleware/auth.js && node --check src/routes/damageClaims.js && node --check src/services/damageClaimWorkflow.js && node --check src/services/claimProviders.js"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@sendgrid/mail": "^8.1.6",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "express-rate-limit": "^8.2.1",
-    "express-validator": "^7.0.1",
     "helmet": "^8.1.0",
-    "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1",
+    "prisma": "^5.22.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "express-validator": "^7.0.1",
+    "json2csv": "^6.0.0-alpha.2",
+    "multer": "^1.4.5-lts.2",
+    "nodemon": "^3.1.10",
     "pdfkit": "^0.18.0",
     "socket.io": "^4.8.3",
     "stripe": "^14.5.0",
-    "twilio": "^6.0.0",
-    "uuid": "^9.0.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1",
-    "prisma": "^5.22.0"
+    "twilio": "^6.0.0"
   }
 }

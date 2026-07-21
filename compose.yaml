@@ -1,0 +1,63 @@
+services:
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: laundry_services
+      POSTGRES_USER: laundry_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U laundry_app -d laundry_services"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - laundry-postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      database:
+        condition: service_healthy
+    environment: &app-environment
+      NODE_ENV: production
+      DATABASE_URL: postgresql://laundry_app:${POSTGRES_PASSWORD}@database:5432/laundry_services?schema=public
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ISSUER: ${JWT_ISSUER:-laundry-services}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-laundry-services-api}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      CLAIM_STORAGE_URL: ${CLAIM_STORAGE_URL:?CLAIM_STORAGE_URL is required}
+      CLAIM_STORAGE_TOKEN: ${CLAIM_STORAGE_TOKEN:?CLAIM_STORAGE_TOKEN is required}
+      CLAIM_OCR_URL: ${CLAIM_OCR_URL:?CLAIM_OCR_URL is required}
+      CLAIM_OCR_TOKEN: ${CLAIM_OCR_TOKEN:?CLAIM_OCR_TOKEN is required}
+      CLAIM_ESIGN_URL: ${CLAIM_ESIGN_URL:?CLAIM_ESIGN_URL is required}
+      CLAIM_ESIGN_TOKEN: ${CLAIM_ESIGN_TOKEN:?CLAIM_ESIGN_TOKEN is required}
+      CLAIM_FILING_URL: ${CLAIM_FILING_URL:?CLAIM_FILING_URL is required}
+      CLAIM_FILING_TOKEN: ${CLAIM_FILING_TOKEN:?CLAIM_FILING_TOKEN is required}
+      CLAIM_TEMPLATE_URL: ${CLAIM_TEMPLATE_URL:?CLAIM_TEMPLATE_URL is required}
+      CLAIM_TEMPLATE_TOKEN: ${CLAIM_TEMPLATE_TOKEN:?CLAIM_TEMPLATE_TOKEN is required}
+    ports:
+      - "${APP_PORT:-3001}:3001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    profiles: ["tools"]
+    depends_on:
+      database:
+        condition: service_healthy
+    environment: *app-environment
+    command: ["npm", "run", "migrate"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  laundry-postgres:
