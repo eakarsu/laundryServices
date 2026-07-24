@@ -4,11 +4,14 @@ import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { FiUser, FiShield, FiTruck, FiUsers } from 'react-icons/fi';
 
+const demoPassword = import.meta.env.VITE_ENABLE_DEMO_CREDENTIAL_AUTOFILL === 'true'
+  ? import.meta.env.VITE_DEMO_PASSWORD || ''
+  : '';
+
 const demoAccounts = [
   {
     role: 'Admin',
     email: 'admin@laundry.com',
-    password: 'password123',
     icon: FiShield,
     color: '#dc2626',
     description: 'Full system access'
@@ -16,7 +19,6 @@ const demoAccounts = [
   {
     role: 'Manager',
     email: 'manager@laundry.com',
-    password: 'password123',
     icon: FiUsers,
     color: '#2563eb',
     description: 'Operations management'
@@ -24,7 +26,6 @@ const demoAccounts = [
   {
     role: 'Driver',
     email: 'driver1@laundry.com',
-    password: 'password123',
     icon: FiTruck,
     color: '#16a34a',
     description: 'Delivery & pickups'
@@ -32,7 +33,6 @@ const demoAccounts = [
   {
     role: 'Customer',
     email: 'john.smith@email.com',
-    password: 'password123',
     icon: FiUser,
     color: '#9333ea',
     description: 'Customer portal'
@@ -72,14 +72,14 @@ function Login() {
 
   const handleQuickLogin = (account) => {
     setEmail(account.email);
-    setPassword(account.password);
+    setPassword(demoPassword);
   };
 
   const handleQuickLoginAndSubmit = async (account) => {
     setLoading(true);
     try {
       const userType = detectUserType(account.email);
-      await login(account.email, account.password, userType);
+      await login(account.email, demoPassword, userType);
       toast.success(`Logged in as ${account.role}!`);
       navigate('/');
     } catch (error) {
@@ -153,7 +153,7 @@ function Login() {
                   key={account.role}
                   type="button"
                   onClick={() => handleQuickLoginAndSubmit(account)}
-                  disabled={loading}
+                  disabled={loading || !demoPassword}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -210,7 +210,7 @@ function Login() {
           color: '#64748b',
           textAlign: 'center'
         }}>
-          <strong>All demo accounts use password:</strong> password123
+          Demo passwords are loaded from the local environment.
         </div>
       </div>
     </div>

@@ -4,6 +4,12 @@ const crypto = require('crypto');
 
 const prisma = new PrismaClient();
 
+function requireDemoPassword() {
+  const password = process.env.DEMO_PASSWORD;
+  if (!password || password.length < 12) throw new Error('DEMO_PASSWORD must be at least 12 characters');
+  return password;
+}
+
 async function main() {
   console.log('🚀 Seeding database with comprehensive data...\n');
 
@@ -41,7 +47,7 @@ async function main() {
 
   // Create Staff (16)
   console.log('👥 Creating staff...');
-  const hashedPassword = await bcrypt.hash('password123', 10);
+  const hashedPassword = await bcrypt.hash(requireDemoPassword(), 10);
   const staff = await Promise.all([
     prisma.staff.create({ data: { email: 'admin@laundry.com', passwordHash: hashedPassword, firstName: 'John', lastName: 'Admin', role: 'ADMIN', phone: '212-555-1001', locationId: locations[0].id } }),
     prisma.staff.create({ data: { email: 'manager@laundry.com', passwordHash: hashedPassword, firstName: 'Sarah', lastName: 'Manager', role: 'MANAGER', phone: '212-555-1002', locationId: locations[0].id } }),
@@ -793,7 +799,7 @@ async function main() {
   console.log(`   • ${subscriptions.length} subscriptions`);
   console.log(`   • ${notifications.length} notifications`);
   console.log(`   • ${passwordResets.length} password resets`);
-  console.log('\n🔑 Test credentials (all use password123):');
+  console.log('\n🔑 Demo login users provisioned:');
   console.log('   • Admin: admin@laundry.com');
   console.log('   • Manager: manager@laundry.com');
   console.log('   • Driver: driver1@laundry.com');
