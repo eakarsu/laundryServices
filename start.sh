@@ -33,7 +33,8 @@ done
 [[ "$BACKEND_PORT" != "$FRONTEND_PORT" ]] || { echo "BACKEND_PORT and FRONTEND_PORT must be different" >&2; exit 1; }
 PORT="$BACKEND_PORT"
 BACKEND_HOST=127.0.0.1
-export PORT BACKEND_HOST
+VITE_API_PROXY_TARGET="http://127.0.0.1:$BACKEND_PORT"
+export PORT BACKEND_HOST VITE_API_PROXY_TARGET
 for assigned_port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
   lsof -nP -iTCP:"$assigned_port" -sTCP:LISTEN >/dev/null 2>&1 && { echo "Assigned port $assigned_port is occupied" >&2; exit 1; }
 done

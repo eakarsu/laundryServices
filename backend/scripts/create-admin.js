@@ -15,19 +15,13 @@ const prisma = new PrismaClient();
 
 async function main() {
   const existing = await prisma.staff.findUnique({ where: { email }, select: { id: true } });
-  if (existing) throw new Error(`Refusing to replace existing staff account for ${email}`);
-  await prisma.staff.create({
-    data: {
-      email,
-      firstName,
-      lastName,
-      passwordHash: await bcrypt.hash(password, 12),
-      role: StaffRole.ADMIN,
-      isActive: true,
-      authVersion: 1,
-    },
+  const passwordHash = await bcrypt.hash(password, 12);
+  await prisma.staff.upsert({
+    where: { email },
+    create: { email, firstName, lastName, passwordHash, role: StaffRole.ADMIN, isActive: true, authVersion: 1 },
+    update: { firstName, lastName, passwordHash, role: StaffRole.ADMIN, isActive: true, authVersion: { increment: existing ? 1 : 0 } },
   });
-  console.log(`Created initial staff administrator ${email}`);
+  console.log(`Initial staff administrator is ready for ${email}`);
 }
 
 main()

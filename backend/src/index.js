@@ -40,6 +40,7 @@ const corsOptions = {
 
 const authRoutes = require('./routes/auth');
 const damageClaimRoutes = require('./routes/damageClaims');
+const runtimeAiRoutes = require('./routes/runtimeAi');
 
 const prisma = new PrismaClient();
 const app = express();
@@ -94,6 +95,7 @@ app.use('/api/auth', (req, res, next) => {
   return res.status(404).json({ error: 'NOT_FOUND' });
 }, authRoutes);
 app.use('/api/damage-claims', damageClaimRoutes);
+app.use('/api/runtime-ai', require('./middleware/auth').authenticateToken, runtimeAiRoutes);
 if (legacyFeaturesEnabled) {
   app.use('/api/customers', require('./routes/customers'));
   app.use('/api/orders', require('./routes/orders'));
