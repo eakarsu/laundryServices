@@ -115,9 +115,12 @@ if [[ "${START_FRONTEND:-true}" == "true" && ! -d frontend/node_modules ]]; then
   exit 1
 fi
 
-# Startup is intentionally read-only. Operators run `npm --prefix backend run migrate`
-# as a separate deployment step after taking a backup.
-if [[ "${NODE_ENV:-development}" != test ]]; then npm --prefix backend run migrate:status; fi
+if [[ "${NODE_ENV:-development}" != production && "${ENABLE_DEMO_CREDENTIAL_AUTOFILL:-true}" == true ]]; then
+  (cd backend && npx prisma db push)
+  npm --prefix backend run create-admin
+elif [[ "${NODE_ENV:-development}" != test ]]; then
+  npm --prefix backend run migrate:status
+fi
 
 backend_pid=''
 frontend_pid=''
