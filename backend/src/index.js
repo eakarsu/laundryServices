@@ -88,8 +88,18 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+app.get('/api/auth/demo-credentials', (_req, res) => {
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEMO_CREDENTIAL_AUTOFILL === 'false') {
+    return res.status(404).json({ error: 'NOT_FOUND' });
+  }
+  const email = process.env.DEMO_EMAIL || process.env.SEED_ADMIN_EMAIL || process.env.ADMIN_EMAIL;
+  const password = process.env.DEMO_PASSWORD || process.env.SEED_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD;
+  if (!email || !password) return res.status(404).json({ error: 'NOT_CONFIGURED' });
+  return res.json({ email, password });
+});
+
 // Routes
-const governedAuthRoutes = new Set(['POST /staff/login', 'POST /login', 'GET /me', 'POST /change-password', 'POST /logout']);
+const governedAuthRoutes = new Set(['GET /demo-credentials', 'POST /staff/login', 'POST /login', 'GET /me', 'POST /change-password', 'POST /logout']);
 app.use('/api/auth', (req, res, next) => {
   if (legacyFeaturesEnabled || governedAuthRoutes.has(`${req.method} ${req.path}`)) return next();
   return res.status(404).json({ error: 'NOT_FOUND' });

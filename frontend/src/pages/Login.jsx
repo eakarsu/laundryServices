@@ -142,7 +142,7 @@ function Login() {
             textTransform: 'uppercase',
             letterSpacing: '0.05em'
           }}>
-            Quick Demo Login
+            Auto Fill Demo Credentials
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

@@ -19,6 +19,8 @@ async function api(path, { token, method = 'GET', body } = {}) {
 function Login({ onLogin }) {
   const [form, setForm] = useState({ email: '', password: '', type: 'staff' });
   const [error, setError] = useState('');
+  const demoEmail = import.meta.env.VITE_DEMO_EMAIL || '';
+  const demoPassword = import.meta.env.VITE_DEMO_PASSWORD || '';
   const submit = async (event) => {
     event.preventDefault(); setError('');
     try {
@@ -36,7 +38,15 @@ function Login({ onLogin }) {
         <label>Email<input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
         <label>Password<input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
         {error && <p className="claim-error" role="alert">{error}</p>}
-        <button className="claim-button primary" type="submit">Sign in</button>
+        <button
+          className="claim-button ghost"
+          type="button"
+          disabled={!demoEmail || !demoPassword}
+          onClick={() => setForm({ ...form, email: demoEmail, password: demoPassword, type: 'staff' })}
+        >
+          Auto Fill Demo Credentials
+        </button>
+        <button className="claim-button primary" type="submit">Sign In</button>
       </form>
     </section>
   </main>;
