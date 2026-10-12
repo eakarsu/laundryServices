@@ -5,6 +5,7 @@ import {
 } from 'react-icons/fi';
 import { toast } from 'react-toastify';
 import api from '../services/api';
+import FormattedAIReport from '../components/FormattedAIReport.jsx';
 
 // Sample data for testing
 const sampleData = {
@@ -210,42 +211,10 @@ function AIFeatures() {
     }
   };
 
-  const loadSampleData = () => {
-    const r = (a) => Math.floor(Math.random() * a.length);
-    switch (activeTab) {
-      case 'estimator':
-        setDescription(sampleData.estimator[r(sampleData.estimator)]);
-        toast.info('Sample loaded');
-        break;
-      case 'stain':
-        setStainDescription(sampleData.stain[r(sampleData.stain)]);
-        toast.info('Sample loaded');
-        break;
-      case 'chat':
-        setChatMessage(sampleData.chat[r(sampleData.chat)]);
-        toast.info('Sample loaded');
-        break;
-      case 'demand':
-        handleDemandPrediction();
-        break;
-      case 'maintenance':
-        handleMaintenancePrediction();
-        break;
-      case 'reactivation':
-        handleReactivationTargets();
-        break;
-      case 'churn':
-        handleChurn(false);
-        break;
-      case 'whatsapp':
-        handleConversations();
-        break;
-      case 'audit':
-        handleResultsLoad();
-        break;
-      default:
-        toast.info('No sample data for this tab');
-    }
+  const fillSampleData = (index) => {
+    if (activeTab === 'estimator') setDescription(sampleData.estimator[index]);
+    if (activeTab === 'stain') setStainDescription(sampleData.stain[index]);
+    if (activeTab === 'chat') setChatMessage(sampleData.chat[index]);
   };
 
   return (
@@ -255,9 +224,15 @@ function AIFeatures() {
           <h1 className="page-title">AI Features</h1>
           <p className="page-subtitle">Vision, churn prediction, lifecycle, WhatsApp concierge</p>
         </div>
-        <button className="btn btn-primary" onClick={loadSampleData}>
-          <FiDatabase /> Load Sample Data
-        </button>
+        {['estimator', 'stain', 'chat'].includes(activeTab) && (
+          <div aria-label="Fill example AI request" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['Quick brief', 'Team planning', 'Detailed review'].map((name, index) => (
+              <button key={name} type="button" className="btn btn-secondary" disabled={loading} onClick={() => fillSampleData(index)}>
+                <FiDatabase /> {name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="tabs" style={{ marginBottom: 24, flexWrap: 'wrap' }}>
@@ -350,6 +325,7 @@ function AIFeatures() {
             ) : (
               <div className="empty-state" style={{ padding: 40 }}><p>Submit details to estimate.</p></div>
             )}
+            {estimate && <FormattedAIReport response={estimate} title="Estimate details" />}
           </div>
         </div>
       )}
@@ -427,6 +403,7 @@ function AIFeatures() {
             ) : (
               <div className="empty-state" style={{ padding: 40 }}><p>Describe a stain or upload a photo.</p></div>
             )}
+            {stainResult && <FormattedAIReport response={stainResult} title="Stain analysis details" />}
           </div>
         </div>
       )}
@@ -654,13 +631,13 @@ function AIFeatures() {
                 <thead><tr><th>When</th><th>Feature</th><th>Model</th><th>Success</th><th>Latency</th></tr></thead>
                 <tbody>
                   {aiResults.results.map((r) => (
-                    <tr key={r.id}>
+                    <React.Fragment key={r.id}><tr>
                       <td>{new Date(r.createdAt).toLocaleString()}</td>
                       <td>{r.feature}</td>
                       <td>{r.model}</td>
                       <td>{r.success ? '✓' : '✗'}</td>
-                      <td>{r.latencyMs ? `${r.latencyMs}ms` : '-'}</td>
-                    </tr>
+                      <td>{r.latencyMs == null ? '-' : `${r.latencyMs}ms`}</td>
+                    </tr><tr><td colSpan={5}><details><summary>View saved result</summary><FormattedAIReport response={r.result ?? r} title={`${r.feature} saved result`} /></details></td></tr></React.Fragment>
                   ))}
                 </tbody>
               </table>

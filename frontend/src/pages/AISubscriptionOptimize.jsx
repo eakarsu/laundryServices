@@ -1,3 +1,5 @@
+import NativeAIControls from "../components/NativeAIControls.jsx";
+import FormattedAIReport from "../components/FormattedAIReport";
 import React, { useState } from 'react';
 import { FiZap, FiSettings, FiSend } from 'react-icons/fi';
 import { toast } from 'react-toastify';
@@ -39,10 +41,8 @@ function AISubscriptionOptimize() {
     }
   };
 
-  const recommendation = result?.recommendation || result;
-
   return (
-    <div>
+    <NativeAIControls busy={loading} context="laundryServices"><div>
       <div className="page-header">
         <div>
           <h1 className="page-title">AI Subscription Optimizer</h1>
@@ -60,7 +60,7 @@ function AISubscriptionOptimize() {
           </h4>
           <div className="form-group">
             <label className="form-label">Customer ID *</label>
-            <input
+            <input data-ai-field={"customerId"}
               type="text"
               className="form-input"
               value={customerId}
@@ -71,7 +71,7 @@ function AISubscriptionOptimize() {
           </div>
           <div className="form-group">
             <label className="form-label">Subscription ID (optional)</label>
-            <input
+            <input data-ai-field={"subscriptionId"}
               type="text"
               className="form-input"
               value={subscriptionId}
@@ -82,7 +82,7 @@ function AISubscriptionOptimize() {
           </div>
           <div className="form-group">
             <label className="form-label">Notes (optional)</label>
-            <textarea
+            <textarea data-ai-field={"notes"}
               className="form-textarea"
               rows={3}
               value={notes}
@@ -135,91 +135,10 @@ function AISubscriptionOptimize() {
               <p>Working...</p>
             </div>
           )}
-          {result && (
-            <div>
-              {recommendation && typeof recommendation === 'object' && (
-                <div className="stats-grid" style={{ marginBottom: 16 }}>
-                  {recommendation.recommended_frequency && (
-                    <div className="stat-card primary">
-                      <div className="stat-label">Frequency</div>
-                      <div className="stat-value" style={{ fontSize: 18 }}>
-                        {recommendation.recommended_frequency}
-                      </div>
-                    </div>
-                  )}
-                  {recommendation.recommended_plan && (
-                    <div className="stat-card success">
-                      <div className="stat-label">Plan</div>
-                      <div className="stat-value" style={{ fontSize: 18 }}>
-                        {recommendation.recommended_plan}
-                      </div>
-                    </div>
-                  )}
-                  {recommendation.expected_savings_per_month != null && (
-                    <div className="stat-card warning">
-                      <div className="stat-label">Savings / mo</div>
-                      <div className="stat-value">${Number(recommendation.expected_savings_per_month).toFixed(2)}</div>
-                    </div>
-                  )}
-                  {recommendation.expected_revenue_lift_per_month != null && (
-                    <div className="stat-card primary">
-                      <div className="stat-label">Revenue Lift / mo</div>
-                      <div className="stat-value">${Number(recommendation.expected_revenue_lift_per_month).toFixed(2)}</div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {recommendation?.recommended_add_ons?.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <h5 style={{ marginBottom: 8 }}>Recommended Add-ons</h5>
-                  <ul style={{ paddingLeft: 18, color: '#334155', fontSize: 14 }}>
-                    {recommendation.recommended_add_ons.map((a, i) => (
-                      <li key={i}>{typeof a === 'string' ? a : JSON.stringify(a)}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {recommendation?.rationale && (
-                <div style={{ marginBottom: 16 }}>
-                  <h5 style={{ marginBottom: 8 }}>Rationale</h5>
-                  <p style={{ color: '#475569', fontSize: 14, lineHeight: 1.5 }}>
-                    {typeof recommendation.rationale === 'string'
-                      ? recommendation.rationale
-                      : JSON.stringify(recommendation.rationale)}
-                  </p>
-                </div>
-              )}
-              {recommendation?.warnings?.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <h5 style={{ marginBottom: 8 }}>Warnings</h5>
-                  <ul style={{ paddingLeft: 18, color: '#b45309', fontSize: 14 }}>
-                    {recommendation.warnings.map((w, i) => (
-                      <li key={i}>{typeof w === 'string' ? w : JSON.stringify(w)}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <details>
-                <summary style={{ cursor: 'pointer', color: '#64748b', fontSize: 13 }}>Show raw JSON</summary>
-                <pre
-                  style={{
-                    marginTop: 8,
-                    fontSize: 12,
-                    background: '#f8fafc',
-                    padding: 12,
-                    borderRadius: 8,
-                    overflow: 'auto',
-                    maxHeight: 320,
-                  }}
-                >
-                  {JSON.stringify(result, null, 2)}
-                </pre>
-              </details>
-            </div>
-          )}
+          {result && <FormattedAIReport response={result} title="Subscription recommendation" />}
         </div>
       </div>
-    </div>
+    </div></NativeAIControls>
   );
 }
 

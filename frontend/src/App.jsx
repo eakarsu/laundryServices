@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import OperationsReadiness from './pages/OperationsReadiness.jsx';
 
 const initialClaim = { orderId: '', title: '', jurisdiction: 'NY', incidentDate: '' };
 
@@ -19,8 +20,16 @@ async function api(path, { token, method = 'GET', body } = {}) {
 function Login({ onLogin }) {
   const [form, setForm] = useState({ email: '', password: '', type: 'staff' });
   const [error, setError] = useState('');
-  const demoEmail = import.meta.env.VITE_DEMO_EMAIL || '';
-  const demoPassword = import.meta.env.VITE_DEMO_PASSWORD || '';
+  const [demoLoading, setDemoLoading] = useState(false);
+  const fillDemo = async () => {
+    setError(''); setDemoLoading(true);
+    try {
+      const credentials = await api('/auth/demo-credentials');
+      if (!credentials.email || !credentials.password) throw new Error('Demo credentials are not configured for this session.');
+      setForm({ email: credentials.email, password: credentials.password, type: 'staff' });
+    } catch (_) { setError('Demo credentials are not configured for this session.'); }
+    finally { setDemoLoading(false); }
+  };
   const submit = async (event) => {
     event.preventDefault(); setError('');
     try {
@@ -41,10 +50,10 @@ function Login({ onLogin }) {
         <button
           className="claim-button ghost"
           type="button"
-          disabled={!demoEmail || !demoPassword}
-          onClick={() => setForm({ ...form, email: demoEmail, password: demoPassword, type: 'staff' })}
+          disabled={demoLoading}
+          onClick={fillDemo}
         >
-          Auto Fill Demo Credentials
+          {demoLoading ? 'Loading demo credentials…' : 'Fill Demo Credentials'}
         </button>
         <button className="claim-button primary" type="submit">Sign In</button>
       </form>
@@ -64,10 +73,15 @@ function App() {
   const [claimForm, setClaimForm] = useState(initialClaim);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [view, setView] = useState('claims');
 
   const loadClaims = useCallback(async () => {
     if (!session?.token) return;
-    try { setClaims((await api('/damage-claims', { token: session.token })).items); }
+    try {
+      const payload = await api('/damage-claims', { token: session.token });
+      if (!Array.isArray(payload.items)) throw new Error('Claim list response is invalid');
+      setClaims(payload.items);
+    }
     catch (requestError) { setError(requestError.message); }
   }, [session]);
 
@@ -108,6 +122,11 @@ function App() {
       <div><p className="eyebrow">Laundry Services</p><h1>Claim governance</h1></div>
       <div className="identity"><span>{session.user.firstName} {session.user.lastName}</span><small>{session.user.role || session.user.type}</small><button className="claim-button ghost" onClick={logout}>Sign out</button></div>
     </header>
+    <nav aria-label="Main views" style={{ maxWidth: 1440, margin: '0 auto 20px', display: 'flex', gap: 8 }}>
+      <button type="button" className="claim-button ghost" aria-current={view === 'claims' ? 'page' : undefined} onClick={() => setView('claims')}>Claims</button>
+      <button type="button" className="claim-button ghost" aria-current={view === 'ai' ? 'page' : undefined} onClick={() => setView('ai')}>Operations AI</button>
+    </nav>
+    {view === 'ai' ? <OperationsReadiness token={session.token} /> : <>
     {(error || notice) && <div className={error ? 'claim-alert error' : 'claim-alert success'} role="status">{error || notice}</div>}
     <div className="claims-grid">
       <aside className="claim-panel">
@@ -139,6 +158,7 @@ function App() {
         </section>
       </main>
     </div>
+    </>}
   </div>;
 }
 
