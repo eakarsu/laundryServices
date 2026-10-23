@@ -43,6 +43,7 @@ function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [demoError, setDemoError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -121,6 +122,24 @@ function Login() {
               required
             />
           </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const demoEmail = import.meta.env.VITE_DEMO_EMAIL; const demoPassword = import.meta.env.VITE_DEMO_PASSWORD;
+              if (demoEmail && demoPassword) { setEmail(demoEmail); setPassword(demoPassword); return; }
+              try {
+                const res = await fetch('/api/auth/demo-credentials', { cache: 'no-store' });
+                if (res.ok) { const data = await res.json(); if (data.email && data.password) { setEmail(data.email); setPassword(data.password); return; } }
+              } catch { /* fallback below */ }
+              setDemoError('Demo credentials are not configured for this environment.');
+            }}
+            aria-label="Fill demo credentials"
+            style={{ width: '100%', marginTop: '12px', padding: '10px 14px', borderRadius: '8px', border: '1px solid currentColor', background: 'transparent', cursor: 'pointer' }}
+          >
+            Fill demo credentials
+          </button>
+          {demoError && <p style={{ color: '#dc2626', fontSize: 13, marginTop: 8 }}>{demoError}</p>}
 
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%' }} disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}

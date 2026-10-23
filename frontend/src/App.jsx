@@ -22,12 +22,15 @@ function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [demoLoading, setDemoLoading] = useState(false);
   const fillDemo = async () => {
-    setError(''); setDemoLoading(true);
+    setError('');
+    const demoEmail = import.meta.env.VITE_DEMO_EMAIL; const demoPassword = import.meta.env.VITE_DEMO_PASSWORD;
+    if (demoEmail && demoPassword) { setForm({ email: demoEmail, password: demoPassword, type: 'staff' }); return; }
+    setDemoLoading(true);
     try {
       const credentials = await api('/auth/demo-credentials');
-      if (!credentials.email || !credentials.password) throw new Error('Demo credentials are not configured for this session.');
+      if (!credentials.email || !credentials.password) throw new Error('Demo credentials are not configured for this environment.');
       setForm({ email: credentials.email, password: credentials.password, type: 'staff' });
-    } catch (_) { setError('Demo credentials are not configured for this session.'); }
+    } catch (_) { setError('Demo credentials are not configured for this environment.'); }
     finally { setDemoLoading(false); }
   };
   const submit = async (event) => {
@@ -50,10 +53,11 @@ function Login({ onLogin }) {
         <button
           className="claim-button ghost"
           type="button"
+          aria-label="Fill demo credentials"
           disabled={demoLoading}
           onClick={fillDemo}
         >
-          {demoLoading ? 'Loading demo credentials…' : 'Fill Demo Credentials'}
+          Fill demo credentials
         </button>
         <button className="claim-button primary" type="submit">Sign In</button>
       </form>
